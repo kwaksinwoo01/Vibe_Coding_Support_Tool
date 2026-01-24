@@ -795,6 +795,12 @@ class MainWindow(QMainWindow):
         # Replace the scroll area content with the actual widget
         if hasattr(self, 'scrollArea'):
             self.scrollArea.setWidget(self.setup_widget)
+            # Set dynamic default path
+            if hasattr(self.setup_widget, 'doc_path_edit'):
+                repo_name = self.setup_widget.get_current_repo_name()
+                default_path = f"{repo_name}\\docs"
+                self.setup_widget.doc_path_edit.setText(default_path)
+                self.setup_widget.doc_path_edit.setPlaceholderText(f"기본값: {default_path}")
         
         # Initialize Info tab
         info_widget = self.create_info_widget()
