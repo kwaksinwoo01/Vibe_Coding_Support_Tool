@@ -1,0 +1,10 @@
+# .github/CODEOWNERS
+# old_file 디렉토리는 백업용으로 코드 검토에서 제외
+old_file/ @ghost
+dropboxtool_set_summation/ @ghost
+rename/exiftool_files/ @ghost
+deprecated_modules/ @ghost
+.env/ @ghost
+client/rename/exiftool_files/ @ghost
+# 메인 코드는 일반 검토 규칙 적용
+*.py @kwaksinwoo01
