@@ -163,8 +163,15 @@ Vibe_Coding_Support_Tool/
 ├── run_vibestation.py             # 실행 스크립트
 ├── requirements.txt               # Python 의존성
 ├── vibestation.spec               # PyInstaller 스펙
+├── test_vibestation.py            # 테스트 스크립트
+├── example_client.py              # API 클라이언트 예제
+├── USAGE.md                       # 사용 설명서
+├── SCREENSHOTS.md                 # UI 스크린샷
+├── Monitoring.py                  # (레거시) 이전 모니터링 구현
 └── README.md
 ```
+
+**참고**: `Monitoring.py`는 이전 버전의 모니터링 도구입니다. 새로운 `vibeStation` 구현을 사용하는 것을 권장합니다.
 
 ### 라이선스
 
