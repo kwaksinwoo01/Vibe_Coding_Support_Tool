@@ -1,0 +1,32 @@
+# GitHub Agent Instructions
+# This file contains instructions for the AI coding agent
+
+version: "1.0"
+agent_name: "Vibe Coding Assistant"
+
+instructions:
+  general:
+    - "Follow best practices for code quality"
+    - "Write clear and concise commit messages"
+    - "Add appropriate comments to complex code"
+  
+  coding_style:
+    - "Use meaningful variable names"
+    - "Follow PEP 8 for Python code"
+    - "Keep functions small and focused"
+  
+  testing:
+    - "Write unit tests for new features"
+    - "Ensure all tests pass before committing"
+  
+  documentation:
+    - "Update README when adding new features"
+    - "Document all public APIs"
+
+preferences:
+  language: "Python"
+  framework: "FastAPI, PyQt6"
+  tools:
+    - "pytest"
+    - "black"
+    - "pylint"

@@ -1,0 +1,23 @@
+server:
+  host: "127.0.0.1"
+  port: 8765
+
+files:
+  instructions: "instructions.yaml"
+  auth_key: "auth_key.txt"
+  github_dir: ".github"
+
+logging:
+  tiers:
+    - "A"
+    - "B"
+    - "C"
+    - "D"
+    - "E"
+    - "F"
+  max_log_entries: 1000
+
+vibe_log:
+  retry_attempts: 3
+  retry_delay: 5
+  timeout: 10
