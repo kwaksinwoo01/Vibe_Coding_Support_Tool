@@ -2,18 +2,41 @@
 
 이 프로그램은 AI 코딩 에이전트로 대규모 코딩프로그램을 만들 때 바이브 코딩으로 개발하는 고질적인 문제를 최소화하고 작업을 효율적으로 수행하기 위한 기능을 최대한 지원하기 위해 만들었습니다.
 
-## vibeStation - GitHub Instructions Monitor & Editor
+## vibeStation - 분리된 애플리케이션
 
-vibeStation은 PyQt6와 FastAPI를 결합한 데스크톱 애플리케이션으로, .github 디렉토리의 지시사항 파일을 편집하고 실시간 로그를 모니터링할 수 있습니다.
+vibeStation은 PyQt6와 FastAPI를 결합한 데스크톱 애플리케이션으로, GitHub Copilot Instructions 파일 관리와 AI 코딩 에이전트 모니터링을 위한 두 가지 독립적인 도구로 구성되어 있습니다.
 
-### 주요 기능
+### 🛠️ vibeStation Setup
+GitHub Copilot Instructions 파일 생성 및 편집 도구
 
-- **실시간 로그 모니터링**: Tier A-F 로그를 실시간으로 수신하고 표시
-- **YAML 편집기**: .github/instructions.yaml 파일을 안전하게 편집 (자동 백업, 원자적 교체, 검증 포함)
-- **FastAPI 서버**: 127.0.0.1에서 실행되는 내장 API 서버
-- **인증**: 로컬 인증 키를 사용한 보안 API 접근
-- **비동기 로그 전송**: 재시도 메커니즘을 포함한 send_vibe_log
-- **Windows EXE 빌드**: PyInstaller를 사용한 독립 실행 파일 생성
+**주요 기능:**
+- 새로운 copilot-instructions.md 파일 생성 (설정 마법사)
+- 기존 파일을 표준 템플릿에 맞게 자동 변환
+- 생성된 파일의 실시간 편집 및 검토
+- 파일 형식 유효성 검증 및 포맷팅
+
+**실행 방법:**
+```bash
+python run_vibestation_setup.bat
+# 또는
+python vibeStation_setup/app.py
+```
+
+### 📊 vibeStation Monitor
+AI 코딩 에이전트 작업 모니터링 및 로그 관제 도구
+
+**주요 기능:**
+- 실시간 로그 모니터링 (Tier A-F 분류)
+- 한국어 인터페이스 지원
+- FastAPI 서버를 통한 로그 수신
+- Instructions 파일에 지침 실시간 추가
+
+**실행 방법:**
+```bash
+python run_vibestation_monitor.bat
+# 또는
+python vibeStation_monitor/app.py
+```
 
 ### 설치 방법
 
@@ -28,24 +51,19 @@ cd Vibe_Coding_Support_Tool
 pip install -r requirements.txt
 ```
 
-### 실행 방법
-
-```bash
-python run_vibestation.py
-```
-
-또는:
-```bash
-python -m vibeStation.app
-```
-
 ### Windows EXE 빌드
 
+각 애플리케이션별로 빌드:
+
 ```bash
-pyinstaller vibestation.spec
+# Setup 앱 빌드
+pyinstaller --onefile --windowed vibeStation_setup/app.py --name vibeStation_setup
+
+# Monitor 앱 빌드
+pyinstaller --onefile --windowed vibeStation_monitor/app.py --name vibeStation_monitor
 ```
 
-빌드된 실행 파일은 `dist/vibeStation.exe`에 생성됩니다.
+빌드된 실행 파일은 `dist/` 디렉토리에 생성됩니다.
 
 ### 사용 방법
 

@@ -1,141 +1,144 @@
 """
-PyQt6 Main Window for vibeStation.
-Provides UI for monitoring logs and editing instructions.
+PyQt6 Main Window for vibeStation Setup.
+Provides UI for creating and editing copilot-instructions.md files.
 """
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QLabel, QPushButton, QTabWidget,
-    QComboBox, QTableWidget, QTableWidgetItem,
-    QMessageBox, QFileDialog, QSplitter, QLineEdit,
-    QScrollArea, QGroupBox, QFormLayout
+    QMessageBox, QFileDialog, QSplitter, QLineEdit,QComboBox,
+    QScrollArea, QGroupBox, QFormLayout, QDialog,
+    QDialogButtonBox
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
-from PyQt6.QtGui import QFont, QColor, QTextCursor
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFont, QTextCursor
+from PyQt6 import uic
 from datetime import datetime
 from pathlib import Path
 import yaml
 
 
-class LogDisplayWidget(QWidget):
-    """Widget for displaying tier logs."""
-    
-    def __init__(self, parent=None):
+class InstructionsEditorWidget(QWidget):
+    """Widget for editing copilot-instructions.md file."""
+
+    save_requested = pyqtSignal(str)
+
+    def __init__(self, yaml_handler, parent=None):
         super().__init__(parent)
+        self.yaml_handler = yaml_handler
         self.init_ui()
-        
+        self.load_instructions_content()
+
     def init_ui(self):
         """Initialize UI components."""
         layout = QVBoxLayout(self)
-        
-        # Filter controls
-        filter_layout = QHBoxLayout()
-        filter_layout.addWidget(QLabel("Filter by Tier:"))
-        
-        self.tier_filter = QComboBox()
-        self.tier_filter.addItems(["All", "A", "B", "C", "D", "E", "F"])
-        self.tier_filter.currentTextChanged.connect(self.on_filter_changed)
-        filter_layout.addWidget(self.tier_filter)
-        
-        self.clear_btn = QPushButton("Clear Logs")
-        self.clear_btn.clicked.connect(self.clear_logs)
-        filter_layout.addWidget(self.clear_btn)
-        
-        filter_layout.addStretch()
-        layout.addLayout(filter_layout)
-        
-        # Log table
-        self.log_table = QTableWidget()
-        self.log_table.setColumnCount(3)
-        self.log_table.setHorizontalHeaderLabels(["Time", "Tier", "Message"])
-        self.log_table.setColumnWidth(0, 150)
-        self.log_table.setColumnWidth(1, 50)
-        self.log_table.setColumnWidth(2, 600)
-        layout.addWidget(self.log_table)
-        
-        self.all_logs = []
-        
-    def add_log(self, tier: str, message: str, timestamp: str = None):
-        """Add a log entry to the display."""
-        if timestamp is None:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        log_entry = {
-            'tier': tier,
-            'message': message,
-            'timestamp': timestamp
-        }
-        self.all_logs.append(log_entry)
-        
-        # Apply filter
-        self.refresh_display()
-    
-    def refresh_display(self):
-        """Refresh the log display with current filter."""
-        filter_tier = self.tier_filter.currentText()
-        
-        # Filter logs
-        if filter_tier == "All":
-            filtered_logs = self.all_logs
-        else:
-            filtered_logs = [log for log in self.all_logs if log['tier'] == filter_tier]
-        
-        # Update table
-        self.log_table.setRowCount(len(filtered_logs))
-        
-        for i, log in enumerate(filtered_logs):
-            # Timestamp
-            time_item = QTableWidgetItem(log['timestamp'])
-            self.log_table.setItem(i, 0, time_item)
-            
-            # Tier with color coding
-            tier_item = QTableWidgetItem(log['tier'])
-            tier_color = self._get_tier_color(log['tier'])
-            tier_item.setBackground(tier_color)
-            tier_item.setForeground(QColor(255, 255, 255))
-            tier_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.log_table.setItem(i, 1, tier_item)
-            
-            # Message
-            msg_item = QTableWidgetItem(log['message'])
-            self.log_table.setItem(i, 2, msg_item)
-        
-        # Scroll to bottom
-        self.log_table.scrollToBottom()
-    
-    def _get_tier_color(self, tier: str) -> QColor:
-        """Get color for tier level."""
-        colors = {
-            'A': QColor(220, 53, 69),    # Red
-            'B': QColor(255, 193, 7),    # Yellow
-            'C': QColor(0, 123, 255),    # Blue
-            'D': QColor(40, 167, 69),    # Green
-            'E': QColor(108, 117, 125),  # Gray
-            'F': QColor(23, 162, 184)    # Cyan
-        }
-        return colors.get(tier, QColor(128, 128, 128))
-    
-    def on_filter_changed(self):
-        """Handle filter change."""
-        self.refresh_display()
-    
-    def clear_logs(self):
-        """Clear all logs."""
-        self.all_logs.clear()
-        self.log_table.setRowCount(0)
-    
-    def update_from_api(self, logs: list):
-        """Update logs from API."""
-        for log in logs:
-            if log not in self.all_logs:
-                self.add_log(
-                    tier=log.get('tier', 'F'),
-                    message=log.get('message', ''),
-                    timestamp=log.get('timestamp', '')
+
+        # Toolbar
+        toolbar = QHBoxLayout()
+
+        self.save_btn = QPushButton("💾 Save Instructions")
+        self.save_btn.clicked.connect(self.save_instructions_content)
+        toolbar.addWidget(self.save_btn)
+
+        self.reload_btn = QPushButton("🔄 Reload")
+        self.reload_btn.clicked.connect(self.load_instructions_content)
+        toolbar.addWidget(self.reload_btn)
+
+        self.validate_btn = QPushButton("✓ Validate Format")
+        self.validate_btn.clicked.connect(self.validate_instructions)
+        toolbar.addWidget(self.validate_btn)
+
+        self.format_btn = QPushButton("🎨 Format Document")
+        self.format_btn.clicked.connect(self.format_instructions)
+        toolbar.addWidget(self.format_btn)
+
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
+
+        # Status label
+        self.status_label = QLabel("Ready - copilot-instructions.md editor")
+        layout.addWidget(self.status_label)
+
+        # Editor
+        self.editor = QTextEdit()
+        self.editor.setFont(QFont("Consolas", 10))
+        layout.addWidget(self.editor)
+
+    def load_instructions_content(self):
+        """Load copilot-instructions.md content from file."""
+        try:
+            instructions_path = Path(".github") / "copilot-instructions.md"
+            if instructions_path.exists():
+                with open(instructions_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                self.editor.setPlainText(content)
+                self.status_label.setText(f"Loaded: {instructions_path}")
+            else:
+                self.status_label.setText("No copilot-instructions.md file found")
+                self.editor.setPlainText("# GitHub Copilot Instructions\n\nPlease create instructions file first.")
+
+        except Exception as e:
+            QMessageBox.warning(self, "Load Error", f"Failed to load instructions file:\n{str(e)}")
+
+    def save_instructions_content(self):
+        """Save copilot-instructions.md content to file."""
+        try:
+            content = self.editor.toPlainText()
+            instructions_path = Path(".github") / "copilot-instructions.md"
+            instructions_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(instructions_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+
+            self.status_label.setText(f"Saved: {instructions_path}")
+            QMessageBox.information(self, "Save Success", "Instructions file saved successfully!")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Failed to save instructions file:\n{str(e)}")
+
+    def validate_instructions(self):
+        """Validate instructions file format."""
+        try:
+            content = self.editor.toPlainText()
+            # Basic validation - check for required sections
+            required_sections = [
+                "## 📌 Quick Start",
+                "## 📦 Entry Points",
+                "## 🏗️ Architecture Patterns",
+                "## 🔧 Required Setup"
+            ]
+
+            missing_sections = []
+            for section in required_sections:
+                if section not in content:
+                    missing_sections.append(section)
+
+            if missing_sections:
+                QMessageBox.warning(
+                    self,
+                    "Validation Warning",
+                    f"Missing required sections:\n" + "\n".join(missing_sections)
                 )
+            else:
+                QMessageBox.information(self, "Validation Success", "Instructions file format is valid!")
 
+        except Exception as e:
+            QMessageBox.critical(self, "Validation Error", f"Failed to validate instructions:\n{str(e)}")
 
-class InstructionsEditorWidget(QWidget):
-    """Widget for editing instructions YAML file."""
+    def format_instructions(self):
+        """Format the instructions document."""
+        try:
+            content = self.editor.toPlainText()
+            # Basic formatting - ensure consistent line endings and spacing
+            formatted_content = content.replace('\r\n', '\n').replace('\r', '\n')
+            # Remove excessive blank lines
+            import re
+            formatted_content = re.sub(r'\n\n\n+', '\n\n', formatted_content)
+
+            self.editor.setPlainText(formatted_content)
+            self.status_label.setText("Document formatted")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Format Error", f"Failed to format document:\n{str(e)}")
     
     save_requested = pyqtSignal(str)
     
@@ -611,11 +614,6 @@ class MainWindow(QMainWindow):
         
         self.init_ui()
         
-        # Setup timer for log updates
-        self.update_timer = QTimer()
-        self.update_timer.timeout.connect(self.update_logs)
-        self.update_timer.start(2000)  # Update every 2 seconds
-        
     def check_instructions_file(self):
         """Check for existing copilot-instructions.md and handle user choice."""
         instructions_path = Path(".github") / "copilot-instructions.md"
@@ -692,10 +690,21 @@ class MainWindow(QMainWindow):
             success = self.generate_instructions_file(setup_data)
             
             if success:
+                # Switch to editor tab for review and manual editing
+                tabs = self.findChild(QTabWidget)
+                if tabs:
+                    for i in range(tabs.count()):
+                        if tabs.tabText(i) == "📝 Instructions Editor":
+                            tabs.setCurrentIndex(i)
+                            break
+                
+                # Reload content in editor
+                self.editor_widget.load_instructions_content()
+                
                 QMessageBox.information(
                     self, 
                     "서식 변경 완료", 
-                    f"기존 파일을 서식에 맞게 변경했습니다.\n\n백업 파일: {backup_path}"
+                    f"기존 파일을 서식에 맞게 변경했습니다.\n\n백업 파일: {backup_path}\n\n이제 'Instructions Editor' 탭에서 내용을 검토하고 수동으로 수정할 수 있습니다."
                 )
             else:
                 QMessageBox.warning(self, "오류", "파일 서식 변경에 실패했습니다.")
@@ -755,46 +764,116 @@ class MainWindow(QMainWindow):
         
     def init_ui(self):
         """Initialize the user interface."""
-        self.setWindowTitle("vibeStation - GitHub Instructions Monitor")
+        # Load UI from .ui file if it exists
+        ui_file = Path(__file__).parent / "main_window.ui"
+        if ui_file.exists():
+            uic.loadUi(str(ui_file), self)
+            # Additional setup after loading UI
+            self.setup_ui_after_load()
+        else:
+            # Fallback to programmatic UI creation
+            self.create_ui_programmatically()
+    
+    def setup_ui_after_load(self):
+        """Setup UI components after loading from .ui file."""
+        # Set window properties
+        self.setWindowTitle("vibeStation Setup - GitHub Instructions Manager")
         self.setGeometry(100, 100, 1200, 800)
         
+        # Initialize Instructions Editor tab
+        self.editor_widget = InstructionsEditorWidget(self.yaml_handler)
+        # Replace the placeholder editor with the actual widget
+        if hasattr(self, 'instructionsEditor'):
+            # Remove placeholder and add real widget
+            layout = self.instructionsTab.layout()
+            layout.replaceWidget(self.instructionsEditor, self.editor_widget)
+            self.instructionsEditor.hide()
+        
+        # Initialize Setup Wizard tab
+        self.setup_widget = SetupWizardWidget()
+        self.setup_widget.setup_completed.connect(self.on_setup_completed)
+        # Replace the scroll area content with the actual widget
+        if hasattr(self, 'scrollArea'):
+            self.scrollArea.setWidget(self.setup_widget)
+        
+        # Initialize Info tab
+        info_widget = self.create_info_widget()
+        if hasattr(self, 'infoTextEdit'):
+            layout = self.infoTab.layout()
+            layout.replaceWidget(self.infoTextEdit, info_widget)
+            self.infoTextEdit.hide()
+        
+        # Connect menu actions
+        if hasattr(self, 'actionSave'):
+            self.actionSave.triggered.connect(self.save_current_tab)
+        if hasattr(self, 'actionExit'):
+            self.actionExit.triggered.connect(self.close)
+        if hasattr(self, 'actionAbout'):
+            self.actionAbout.triggered.connect(self.show_about)
+        
+        # Status bar
+        self.statusBar().showMessage("Ready - Setup Mode")
+        
+    def create_ui_programmatically(self):
+        """Create UI programmatically (fallback method)."""
+        self.setWindowTitle("vibeStation Setup - GitHub Instructions Manager")
+        self.setGeometry(100, 100, 1200, 800)
+
         # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
+
         layout = QVBoxLayout(central_widget)
-        
+
         # Header
-        header = QLabel("vibeStation - Vibe Coding Support Tool")
+        header = QLabel("vibeStation Setup - GitHub Copilot Instructions Manager")
         header.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(header)
-        
-        # Server info
-        port = self.config.get('server', {}).get('port', 8765)
-        server_info = QLabel(f"FastAPI Server: http://127.0.0.1:{port}")
-        server_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(server_info)
-        
+
         # Tab widget
         tabs = QTabWidget()
-        
-        # Logs tab
-        self.log_widget = LogDisplayWidget()
-        tabs.addTab(self.log_widget, "📊 Tier Logs")
-        
+
         # Instructions editor tab
         self.editor_widget = InstructionsEditorWidget(self.yaml_handler)
         tabs.addTab(self.editor_widget, "📝 Instructions Editor")
-        
+
+        # Setup wizard tab
+        self.setup_widget = SetupWizardWidget()
+        self.setup_widget.setup_completed.connect(self.on_setup_completed)
+        tabs.addTab(self.setup_widget, "🛠️ Setup Wizard")
+
         # Info tab
         info_widget = self.create_info_widget()
         tabs.addTab(info_widget, "ℹ️ Info")
-        
+
         layout.addWidget(tabs)
-        
+
         # Status bar
-        self.statusBar().showMessage("Ready")
+        self.statusBar().showMessage("Ready - Setup Mode")
+    
+    def save_current_tab(self):
+        """Save content of current tab."""
+        current_index = self.tabWidget.currentIndex()
+        if current_index == 0:  # Instructions Editor
+            self.editor_widget.save_instructions_content()
+        elif current_index == 1:  # Setup Wizard
+            # Setup wizard has its own save button
+            pass
+        elif current_index == 2:  # Info
+            # Info tab is read-only
+            pass
+    
+    def show_about(self):
+        """Show about dialog."""
+        QMessageBox.about(
+            self,
+            "About vibeStation Setup",
+            "vibeStation Setup v1.0\n\n"
+            "GitHub Copilot Instructions Manager\n\n"
+            "Create and edit .github/copilot-instructions.md files\n"
+            "with an intuitive setup wizard and editor."
+        )
     
     def create_info_widget(self) -> QWidget:
         """Create info widget with usage instructions."""
@@ -841,41 +920,7 @@ curl -X POST http://127.0.0.1:8765/stream \\
         layout.addWidget(info_text)
         return widget
     
-    def update_logs(self):
-        """Update logs from API server."""
-        try:
-            logs = self.api_server.get_logs()
-            
-            # Convert to dict format
-            log_dicts = []
-            for log in logs:
-                log_dicts.append({
-                    'tier': log.tier,
-                    'message': log.message,
-                    'timestamp': log.timestamp
-                })
-            
-            # If server log count is less than UI count, logs were cleared
-            if len(log_dicts) < len(self.log_widget.all_logs):
-                self.log_widget.clear_logs()
-            
-            # Update display with all logs (handles reordering and updates)
-            current_count = len(self.log_widget.all_logs)
-            new_logs = log_dicts[current_count:]
-            
-            for log in new_logs:
-                self.log_widget.add_log(
-                    tier=log['tier'],
-                    message=log['message'],
-                    timestamp=log['timestamp']
-                )
-            
-            # Update status bar
-            self.statusBar().showMessage(f"Total logs: {len(logs)}")
-            
-        except Exception as e:
-            self.statusBar().showMessage(f"Error updating logs: {e}")
-    
+
     def closeEvent(self, event):
         """Handle window close event."""
         reply = QMessageBox.question(
