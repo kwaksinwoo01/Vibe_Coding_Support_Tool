@@ -358,7 +358,11 @@ curl -X POST http://127.0.0.1:8765/stream \\
                     'timestamp': log.timestamp
                 })
             
-            # Update display (only new logs)
+            # If server log count is less than UI count, logs were cleared
+            if len(log_dicts) < len(self.log_widget.all_logs):
+                self.log_widget.clear_logs()
+            
+            # Update display with all logs (handles reordering and updates)
             current_count = len(self.log_widget.all_logs)
             new_logs = log_dicts[current_count:]
             

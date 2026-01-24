@@ -19,7 +19,7 @@ class VibeStationApp:
     def __init__(self):
         """Initialize the application."""
         # Load config
-        config_path = Path(__file__).parent / "vibeStation" / "config.yaml"
+        config_path = Path(__file__).parent / "config.yaml"
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = yaml.safe_load(f)
         

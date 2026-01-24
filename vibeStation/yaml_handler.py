@@ -120,8 +120,8 @@ class YAMLHandler:
                 if verified_data != data:
                     raise ValueError("Verification failed: Written data doesn't match input")
             
-            # Atomic replace
-            shutil.move(str(temp_path), str(self.file_path))
+            # Atomic replace - Path objects are supported directly
+            shutil.move(temp_path, self.file_path)
             
             return True
             

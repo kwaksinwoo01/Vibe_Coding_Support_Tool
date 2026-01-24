@@ -198,8 +198,16 @@ class APIServer:
                         "attempt": attempt + 1,
                         "response": response.json() if response.text else {}
                     }
+            except httpx.HTTPStatusError as e:
+                last_error = f"HTTP {e.response.status_code}: {e.response.text}"
+                if attempt < retry_attempts - 1:
+                    await asyncio.sleep(retry_delay)
+            except httpx.TimeoutException as e:
+                last_error = f"Timeout: {e}"
+                if attempt < retry_attempts - 1:
+                    await asyncio.sleep(retry_delay)
             except Exception as e:
-                last_error = str(e)
+                last_error = f"Unexpected error: {type(e).__name__}: {e}"
                 if attempt < retry_attempts - 1:
                     await asyncio.sleep(retry_delay)
         
