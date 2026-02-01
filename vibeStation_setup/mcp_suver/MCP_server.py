@@ -1,8 +1,28 @@
+"""
+MCP Server Core Engine
+======================
+
+This module contains the core MCP (Model Context Protocol) server engine components
+without UI dependencies. It provides:
+
+- Core server functionality (FastAPI + SSE)
+- Redis integration for state management
+- GitHub repository configuration utilities
+- Server thread management
+- Helper functions for port detection, Redis connection, etc.
+
+UI components have been moved to:
+- vibeStation_monitor/main_window.py (MCPServerApp, SettingsDialog)
+- common/dialogs.py (GitHubTokenHelpDialog)
+
+This allows the server core to be used independently of the UI layer.
+"""
+
 import asyncio
 from fastapi import FastAPI, Request
 from sse_starlette.sse import EventSourceResponse
 from langgraph.checkpoint.redis import RedisSaver
-import redis  # 기존 from redis.asyncio import Redis 대신
+import redis
 import subprocess
 import socket
 import sys
@@ -14,12 +34,7 @@ import traceback
 from pathlib import Path
 from datetime import datetime
 import uvicorn
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QScrollArea,
-                             QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QLabel,
-                             QLineEdit, QFileDialog, QGroupBox, QMessageBox, QComboBox, QDialog,
-                             QTabWidget, QToolButton, QListWidget, QCheckBox)
-from PyQt6.QtCore import QThread, pyqtSignal, QProcess, Qt
-from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtCore import QThread, pyqtSignal
 import httpx
 
 from dotenv import load_dotenv
@@ -260,69 +275,9 @@ def run_agent_command(user_input: str, agent_path: str, env_vars: dict = None) -
         return f"실행 실패: {str(e)}"
 
 # ============================================================================
-# GitHub 저장소 유틸리티
+# GitHub Repository Configuration
 # ============================================================================
-
-class GitHubTokenHelpDialog(QDialog):
-    """GitHub Token 생성법 도움말 다이얼로그"""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("GitHub Token 생성 가이드")
-        self.setGeometry(200, 200, 600, 500)
-        
-        layout = QVBoxLayout()
-        
-        # 도움말 텍스트
-        help_text = QTextEdit()
-        help_text.setReadOnly(True)
-        help_text.setHtml("""
-        <h2>GitHub Personal Access Token 생성 방법</h2>
-        
-        <h3>1. GitHub 로그인</h3>
-        <p><a href="https://github.com">https://github.com</a></p>
-        
-        <h3>2. Settings 접근</h3>
-        <p>우측 상단 프로필 아이콘 클릭 → <b>Settings</b></p>
-        
-        <h3>3. Developer settings</h3>
-        <p>좌측 메뉴 하단 <b>"Developer settings"</b> 클릭</p>
-        
-        <h3>4. Personal access tokens</h3>
-        <p><b>"Personal access tokens"</b> → <b>"Tokens (classic)"</b> 선택</p>
-        
-        <h3>5. 새 토큰 생성</h3>
-        <p><b>"Generate new token"</b> → <b>"Generate new token (classic)"</b> 클릭</p>
-        
-        <h3>6. 토큰 설정</h3>
-        <ul>
-        <li><b>Note:</b> "MCP Server Token" (원하는 이름)</li>
-        <li><b>Expiration:</b> "No expiration" (만료 없음) 또는 원하는 기간</li>
-        <li><b>Select scopes (권한):</b>
-          <ul>
-          <li>✓ <b>repo</b> (전체 저장소 접근)</li>
-          <li>✓ <b>workflow</b> (GitHub Actions 접근)</li>
-          <li>✓ <b>read:org</b> (조직 정보 읽기)</li>
-          </ul>
-        </li>
-        </ul>
-        
-        <h3>7. 토큰 생성</h3>
-        <p>하단 <b>"Generate token"</b> 버튼 클릭</p>
-        
-        <h3>⚠️ 중요</h3>
-        <p style="color: red; font-weight: bold;">생성된 토큰을 복사하세요!</p>
-        <p>예: <code>ghp_1234567890abcdefghijklmnopqrstuvwxyz</code></p>
-        <p style="color: orange;">(이 페이지를 떠나면 다시 볼 수 없습니다!)</p>
-        """)
-        layout.addWidget(help_text)
-        
-        # 닫기 버튼
-        close_btn = QPushButton("닫기")
-        close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn)
-        
-        self.setLayout(layout)
+# Note: GitHubTokenHelpDialog has been moved to common/dialogs.py
 
 class GitHubRepositoryConfig:
     """GitHub 저장소 설정 관리"""
@@ -670,7 +625,7 @@ class GitHubRepositoryConfig:
         return True
 
 # ============================================================================
-# 서버 스레드
+# Server Thread (Core MCP Server)
 # ============================================================================
 
 class ServerThread(QThread):
@@ -827,1029 +782,71 @@ class ServerThread(QThread):
                 pass
 
 # ============================================================================
-# GUI 메인 윈도우
+# Example Server Startup (for standalone usage)
 # ============================================================================
-
-class SettingsDialog(QDialog):
-    """설정 다이얼로그 (GitHub 저장소 연결 + 서버설정)"""
-    
-    def __init__(self, parent, config_file, github_repo_config, env_vars):
-        super().__init__(parent)
-        self.setWindowTitle("설정")
-        self.setGeometry(100, 100, 900, 700)
-        
-        self.parent_app = parent
-        self.config_file = config_file
-        self.github_repo_config = github_repo_config
-        self.env_vars = env_vars
-        
-        # 메인 레이아웃
-        main_layout = QVBoxLayout()
-        
-        # 탭 위젯
-        self.tabs = QTabWidget()
-        
-        # 탭 1: GitHub 저장소 연결
-        self.github_tab = QWidget()
-        self.init_github_tab()
-        self.tabs.addTab(self.github_tab, "GitHub 저장소 연결")
-        
-        # 탭 2: 서버 설정
-        self.server_tab = QWidget()
-        self.init_server_tab()
-        self.tabs.addTab(self.server_tab, "서버 설정")
-        
-        main_layout.addWidget(self.tabs)
-        
-        # 닫기 버튼
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        close_btn = QPushButton("닫기")
-        close_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(close_btn)
-        main_layout.addLayout(btn_layout)
-        
-        self.setLayout(main_layout)
-        
-        # 저장된 설정 로드
-        self.load_saved_settings()
-    
-    def load_saved_settings(self):
-        """저장된 설정 로드"""
-        saved_config = load_config(self.config_file)
-        
-        # GitHub Token 로드
-        if "github_token" in saved_config:
-            self.github_token_input.setText(saved_config["github_token"])
-        
-        # Workflow Secret 로드
-        if "workflow_secret" in saved_config:
-            self.workflow_secret_input.setText(saved_config["workflow_secret"])
-        
-        # 저장소 경로 로드
-        if "repo_path" in saved_config:
-            self.repo_input.setText(saved_config["repo_path"])
-        
-        # 메인 문서 로드
-        if "main_doc" in saved_config:
-            self.main_doc_input.setText(saved_config["main_doc"])
-        
-        # 브랜치 로드
-        if "branch" in saved_config:
-            self.branch_combo.setCurrentText(saved_config["branch"])
-
-        # Redis URL 로드
-        if "redis_url" in saved_config:
-            self.redis_url_input.setText(saved_config["redis_url"])
-
-        # Agent 경로 로드
-        if "agent_path" in saved_config:
-            self.agent_path_input.setText(saved_config["agent_path"])
-
-        # 문서 검색 옵션 로드
-        if "docs2_filter" in saved_config:
-            self.docs2_filter_checkbox.setChecked(bool(saved_config["docs2_filter"]))
-        if "docs_filter" in saved_config:
-            self.docs_filter_checkbox.setChecked(bool(saved_config["docs_filter"]))
-        if "keyword_filter" in saved_config:
-            self.keyword_filter_checkbox.setChecked(bool(saved_config["keyword_filter"]))
-    
-    def init_github_tab(self):
-        """GitHub 저장소 연결 탭 초기화"""
-        layout = QVBoxLayout()
-        
-        # GitHub 저장소 설정 그룹
-        github_group = QGroupBox("GitHub 저장소 설정")
-        github_layout = QVBoxLayout()
-        
-        # 저장소 경로 + GitHub Token
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("저장소 경로:"))
-        self.repo_input = QLineEdit()
-        self.repo_input.setPlaceholderText("https://github.com/owner/repo.git")
-        row1.addWidget(self.repo_input)
-        detect_repo_btn = QPushButton("연결")
-        detect_repo_btn.clicked.connect(self.connect_github_repo)
-        row1.addWidget(detect_repo_btn)
-        github_layout.addLayout(row1)
-        
-        # GitHub Token + 도움말
-        row2 = QHBoxLayout()
-        row2.addWidget(QLabel("GitHub Token:"))
-        self.github_token_input = QLineEdit()
-        self.github_token_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.github_token_input.setPlaceholderText("ghp_...")
-        self.github_token_input.textChanged.connect(self.on_token_changed)
-        row2.addWidget(self.github_token_input)
-        
-        # Token 도움말 버튼
-        help_btn = QToolButton()
-        help_btn.setText("?")
-        help_btn.clicked.connect(self.show_token_help)
-        row2.addWidget(help_btn)
-        github_layout.addLayout(row2)
-        
-        # 저장소 정보 라벨
-        self.repo_info_label = QLabel("저장소: 연결 안됨")
-        self.repo_info_label.setStyleSheet("color: #888; font-size: 9pt;")
-        github_layout.addWidget(self.repo_info_label)
-        
-        # Workflow Secret
-        row3 = QHBoxLayout()
-        row3.addWidget(QLabel("Workflow Secret:"))
-        self.workflow_secret_input = QLineEdit()
-        self.workflow_secret_input.setEchoMode(QLineEdit.EchoMode.Password)
-        row3.addWidget(self.workflow_secret_input)
-        github_layout.addLayout(row3)
-        
-        # 브랜치 선택
-        row4 = QVBoxLayout()
-        branch_label = QLabel("브랜치:")
-        branch_label_desc = QLabel("(최근 커밋순 | GitHub Token 필요)")
-        branch_label_desc.setStyleSheet("color: #888; font-size: 8pt;")
-        row4.addWidget(branch_label)
-        row4.addWidget(branch_label_desc)
-        
-        self.branch_combo = QComboBox()
-        self.branch_combo.setEnabled(False)
-        self.branch_combo.setEditable(True)
-        
-        # ✅ 브랜치 선택 시 이벤트 핸들러 연결
-        self.branch_combo.currentTextChanged.connect(self.on_branch_selected)
-        
-        row4.addWidget(self.branch_combo)
-        github_layout.addLayout(row4)
-
-        
-        # 메인 문서
-        row5 = QVBoxLayout()
-        doc_label = QLabel("메인 문서:")
-        doc_label_desc = QLabel("(GitHub 저장소 기준 상대 경로 또는 로컬 파일 경로)")
-        doc_label_desc.setStyleSheet("color: #888; font-size: 8pt;")
-        row5.addWidget(doc_label)
-        row5.addWidget(doc_label_desc)
-        
-        doc_input_layout = QHBoxLayout()
-        self.main_doc_input = QLineEdit()
-        self.main_doc_input.setPlaceholderText("docs_2/NextTask-2.md")
-        doc_input_layout.addWidget(self.main_doc_input)
-        
-        validate_doc_btn = QPushButton("검증")
-        validate_doc_btn.clicked.connect(self.validate_main_document)
-        doc_input_layout.addWidget(validate_doc_btn)
-        
-        find_doc_btn = QPushButton("찾기")
-        find_doc_btn.clicked.connect(self.find_main_document_in_github)
-        doc_input_layout.addWidget(find_doc_btn)
-        row5.addLayout(doc_input_layout)
-        github_layout.addLayout(row5)
-
-        # 문서 검색 옵션
-        doc_filter_layout = QHBoxLayout()
-        doc_filter_layout.addWidget(QLabel("검색 옵션:"))
-        self.docs2_filter_checkbox = QCheckBox("docs_2")
-        self.docs2_filter_checkbox.setChecked(True)
-        doc_filter_layout.addWidget(self.docs2_filter_checkbox)
-        self.docs_filter_checkbox = QCheckBox("docs")
-        self.docs_filter_checkbox.setChecked(False)
-        doc_filter_layout.addWidget(self.docs_filter_checkbox)
-        self.keyword_filter_checkbox = QCheckBox("키워드 필터 사용(NextTask/WPD/PRD/Task)")
-        self.keyword_filter_checkbox.setChecked(True)
-        doc_filter_layout.addWidget(self.keyword_filter_checkbox)
-        doc_filter_layout.addStretch()
-        github_layout.addLayout(doc_filter_layout)
-
-        # 문서 검색 결과 리스트
-        results_group = QGroupBox("문서 검색 결과")
-        results_layout = QVBoxLayout()
-        self.doc_results_list = QListWidget()
-        self.doc_results_list.setMinimumHeight(120)
-        self.doc_results_list.itemDoubleClicked.connect(self._on_document_double_clicked)
-        results_layout.addWidget(self.doc_results_list)
-
-        results_btn_layout = QHBoxLayout()
-        apply_doc_btn = QPushButton("선택 적용")
-        apply_doc_btn.clicked.connect(self._on_apply_button_clicked)
-        results_btn_layout.addStretch()
-        results_btn_layout.addWidget(apply_doc_btn)
-        results_layout.addLayout(results_btn_layout)
-
-        results_group.setLayout(results_layout)
-        github_layout.addWidget(results_group)
-        
-        # 설정 저장 버튼
-        save_config_btn = QPushButton("GitHub 설정 저장")
-        save_config_btn.clicked.connect(self.save_github_config)
-        github_layout.addWidget(save_config_btn)
-        
-        github_group.setLayout(github_layout)
-        layout.addWidget(github_group)
-        
-        # Agent 설정 그룹
-        config_group = QGroupBox("Agent 설정")
-        config_layout = QVBoxLayout()
-        
-        # Agent 경로
-        agent_layout = QHBoxLayout()
-        agent_layout.addWidget(QLabel("Agent 경로:"))
-        self.agent_path_input = QLineEdit(AGENT_PATH)
-        self.agent_path_input.setReadOnly(True)
-        agent_layout.addWidget(self.agent_path_input)
-        browse_agent_btn = QPushButton("변경")
-        browse_agent_btn.clicked.connect(self.browse_agent_path)
-        agent_layout.addWidget(browse_agent_btn)
-        config_layout.addLayout(agent_layout)
-        
-        # Redis URL
-        redis_url_layout = QHBoxLayout()
-        redis_url_layout.addWidget(QLabel("Redis URL:"))
-        self.redis_url_input = QLineEdit(self.env_vars["REDIS_URL"])
-        redis_url_layout.addWidget(self.redis_url_input)
-        config_layout.addLayout(redis_url_layout)
-        
-        # 적용 버튼
-        apply_env_btn = QPushButton("환경 변수 적용")
-        apply_env_btn.clicked.connect(self.apply_env_vars)
-        config_layout.addWidget(apply_env_btn)
-        
-        config_group.setLayout(config_layout)
-        layout.addWidget(config_group)
-
-        # 설정 로그 출력
-        log_group = QGroupBox("설정 로그")
-        log_layout = QVBoxLayout()
-        self.settings_log_viewer = QTextEdit()
-        self.settings_log_viewer.setReadOnly(True)
-        self.settings_log_viewer.setStyleSheet(
-            "background-color: #1e1e1e; color: #dcdcdc; "
-            "font-family: 'Consolas', 'Courier New', monospace; "
-            "font-size: 9pt; padding: 5px;"
-        )
-        log_layout.addWidget(self.settings_log_viewer)
-        log_group.setLayout(log_layout)
-        layout.addWidget(log_group)
-        
-        layout.addStretch()
-        self.github_tab.setLayout(layout)
-    
-    def init_server_tab(self):
-        """서버 설정 탭 초기화"""
-        layout = QVBoxLayout()
-        
-        # 추후 확장용
-        placeholder = QLabel("서버 설정 옵션 (추후 추가 예정)")
-        placeholder.setStyleSheet("color: #888; font-size: 12pt; padding: 50px;")
-        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(placeholder)
-        
-        self.server_tab.setLayout(layout)
-    
-    def show_token_help(self):
-        """GitHub Token 도움말 표시"""
-        dialog = GitHubTokenHelpDialog(self)
-        dialog.exec()
-    
-    def on_token_changed(self, text):
-        """GitHub Token 입력시 브랜치 활성화"""
-        if text.strip():
-            self.branch_combo.setEnabled(True)
-        else:
-            self.branch_combo.setEnabled(False)
-    
-    def connect_github_repo(self):
-        """GitHub 저장소 연결 및 브랜치 조회"""
-        repo_path = self.repo_input.text().strip()
-        if not repo_path:
-            self.log("저장소 경로를 입력하세요.")
-            return
-        
-        self.log(f"[GitHub] 저장소 연결 시도: {repo_path}")
-        
-        if self.github_repo_config.parse_repository(repo_path):
-            self.log(f"✓ GitHub 저장소 연결 성공: {self.github_repo_config.owner}/{self.github_repo_config.repo_name}")
-            self.log(f"  타입: {self.github_repo_config.repo_type}")
-            self.repo_info_label.setText(
-                f"저장소: {self.github_repo_config.owner}/{self.github_repo_config.repo_name} "
-                f"({self.github_repo_config.repo_type})"
-            )
-            
-            # GitHub Token 설정
-            token = self.github_token_input.text().strip()
-            if token:
-                self.github_repo_config.github_token = token
-                self.log("[GitHub] Token 지원 API 호출 (제한: 60 -> 5000)")
-            
-            # 브랜치 목록 조회
-            self.log("[GitHub] 활성 브랜치 조회 중...")
-            self.log("  방법 1: GitHub API 시도...")
-            branches = self.github_repo_config.fetch_available_branches(use_git=False)
-            
-            if not branches:
-                self.log("  GitHub API 실패 - 대체 방법 시도")
-                self.log("  방법 2: git ls-remote 명령어 시도...")
-                branches = self.github_repo_config.fetch_available_branches(use_git=True)
-            
-            if branches:
-                # 최근 5개만 표시
-                top_branches = branches[:5]
-                
-                self.log(f"✓ 활성 브랜치 총 {len(branches)}개 발견 (최근 5개 표시):")
-                for i, branch in enumerate(top_branches, 1):
-                    self.log(f"  {i}. {branch}")
-                
-                if len(branches) > 5:
-                    self.log(f"  ... 외 {len(branches) - 5}개 (직접 입력 가능)")
-                
-                # 브랜치 콤보박스 업데이트 (드롭다운 방식)
-                self.branch_combo.blockSignals(True)
-                self.branch_combo.clear()
-                self.branch_combo.addItems(top_branches)
-                self.branch_combo.setEnabled(True)
-                
-                # 현재 브랜치 선택 (시그널 활성화 전에 설정)
-                if self.github_repo_config.branch in top_branches:
-                    self.branch_combo.setCurrentText(self.github_repo_config.branch)
-                else:
-                    self.branch_combo.setCurrentText(top_branches[0])
-                
-                self.branch_combo.blockSignals(False)
-                
-                # 초기 브랜치 적용 (시그널 활성화 후 수동 호출)
-                initial_branch = self.branch_combo.currentText()
-                self.github_repo_config.set_branch(initial_branch)
-                self.log(f"✓ 브랜치 선택 준비 완료: {initial_branch}")
-                self.log("  팁: 다른 브랜치는 콤보박스에서 직접 입력할 수 있습니다")
-            else:
-                self.log("⚠ 경고: 브랜치를 조회할 수 없습니다")
-                self.log("  해결책:")
-                self.log("  1. GitHub Token을 입력하세요")
-                self.log("  2. 또는 git을 설치하고 PATH에 추가하세요")
-                self.log("  3. 또는 로컬 저장소 경로로 변경하세요")
-                self.log("  임시 해결: 브랜치를 수동으로 입력할 수 있습니다")
-                
-                # 수동 입력 활성화
-                self.branch_combo.setEnabled(True)
-                self.branch_combo.setEditable(True)
-                self.branch_combo.lineEdit().setText("main")
-        else:
-            self.log("✗ GitHub 저장소 연결 실패. 경로 형식을 확인하세요.")
-            self.repo_info_label.setText("저장소: 연결 실패")
-            self.branch_combo.setEnabled(False)
-            self.branch_combo.clear()
-
-    def on_branch_selected(self, branch_name: str):
-        """브랜치 선택 시 호출되는 함수"""
-        if not branch_name or not branch_name.strip():
-            return
-        
-        branch_name = branch_name.strip()
-        
-        # github_repo_config에 브랜치 적용
-        if self.github_repo_config.is_valid:
-            self.github_repo_config.set_branch(branch_name)
-            self.log(f"")
-            self.log(f"============================================================")
-            self.log(f"[브랜치 선택] {branch_name}")
-            self.log(f"============================================================")
-            
-            # 전역 환경 변수에도 반영
-            global GITHUB_REPO_PATH, MAIN_DOCUMENT_PATH
-            os.environ["GITHUB_BRANCH"] = branch_name
-            
-            # 메인 문서 경로가 있으면 자동 검증
-            main_doc = self.main_doc_input.text().strip()
-            if main_doc:
-                self.log(f"✓ 메인 문서 자동 검증 시작: {main_doc}")
-                self.validate_main_document()
-        else:
-            self.log(f"⚠ 브랜치 선택됨: {branch_name} (저장소 먼저 연결하세요)")
-
-
-    def validate_main_document(self):
-        """메인 문서 경로 검증 (자동 브랜치 폴백 포함)"""
-        main_doc = self.main_doc_input.text().strip()
-        
-        if not main_doc:
-            self.log("메인 문서 경로를 입력하세요.")
-            return False
-        
-        if not self.github_repo_config.is_valid:
-            self.log("GitHub 저장소를 먼저 연결하세요.")
-            return False
-        
-        # 현재 선택된 브랜치 확인 (UI 우선)
-        current_branch = self.branch_combo.currentText().strip()
-        if not current_branch:
-            current_branch = self.github_repo_config.branch
-        
-        self.log(f"")
-        self.log(f"[검증 시작] 문서: {main_doc}")
-        self.log(f"[검증] 선택된 브랜치: {current_branch}")
-        
-        # 시도할 브랜치 목록 (현재 → main → 기본 브랜치)
-        branches_to_try = [current_branch]
-        if "main" not in branches_to_try:
-            branches_to_try.append("main")
-        if self.github_repo_config.branch not in branches_to_try:
-            branches_to_try.append(self.github_repo_config.branch)
-        
-        self.log(f"[검증] 브랜치별 순차 검색 시작...")
-        
-        # 브랜치별 순차 시도
-        for branch in branches_to_try:
-            raw_url = self.github_repo_config.get_raw_content_url(main_doc, branch)
-            
-            if not raw_url:
-                self.log(f"  ✗ {branch}: URL 생성 실패")
-                continue
-            
-            self.log(f"  시도 중: {branch}")
-            
-            try:
-                import urllib.request
-                import urllib.error
-                
-                request = urllib.request.Request(raw_url)
-                request.add_header('User-Agent', 'Mozilla/5.0')
-                
-                # GitHub Token 인증 헤더 추가
-                if self.github_repo_config.github_token:
-                    request.add_header('Authorization', f'token {self.github_repo_config.github_token}')
-                
-                with urllib.request.urlopen(request, timeout=5) as response:
-                    if response.status == 200:
-                        content = response.read().decode('utf-8')
-                        self.log(f"  ✓ 파일 발견! (브랜치: {branch}, 크기: {len(content)} bytes)")
-                        
-                        # 브랜치 자동 변경
-                        if branch != current_branch:
-                            self.branch_combo.setCurrentText(branch)
-                            self.github_repo_config.set_branch(branch)
-                            self.log(f"  ✓ 브랜치 자동 변경: {current_branch} → {branch}")
-                        
-                        self.log(f"")
-                        self.log(f"✓✓✓ 검증 성공! ✓✓✓")
-                        self.log(f"============================================================")
-                        return True
-            except urllib.error.HTTPError as e:
-                if e.code == 404:
-                    self.log(f"  ✗ {branch}: 파일 없음 (404)")
-                else:
-                    self.log(f"  ✗ {branch}: HTTP {e.code}")
-            except Exception as e:
-                self.log(f"  ✗ {branch}: {str(e)}")
-        
-        # 모든 브랜치에서 실패
-        self.log(f"")
-        self.log(f"✗✗✗ 검증 실패 ✗✗✗")
-        self.log(f"  시도한 브랜치: {', '.join(branches_to_try)}")
-        self.log(f"  파일 경로: {main_doc}")
-        self.log(f"")
-        self.log(f"  해결책:")
-        self.log(f"  1. '찾기' 버튼으로 전체 검색")
-        self.log(f"  2. 브랜치를 수동으로 변경")
-        self.log(f"  3. 파일 경로를 다시 확인")
-        self.log(f"============================================================")
-        return False
-    
-    def find_main_document_in_github(self):
-        """GitHub 저장소에서 메인 문서 찾기"""
-        if not self.github_repo_config.is_valid:
-            self.log("GitHub 저장소를 먼저 연결하세요.")
-            return
-        
-        current_branch = self.branch_combo.currentText() or self.github_repo_config.branch
-        
-        self.log(f"[GitHub] 문서 파일 검색 중 (브랜치: {current_branch})...")
-        self.log("  마크다운 파일 찾기 (NextTask, WPD, PRD 등)...")
-        
-        try:
-            import urllib.request
-            import json
-            
-            # GitHub API: 트리 조회
-            api_url = f"https://api.github.com/repos/{self.github_repo_config.owner}/{self.github_repo_config.repo_name}/git/trees/{current_branch}?recursive=1"
-            request = urllib.request.Request(api_url)
-            request.add_header('User-Agent', 'Mozilla/5.0')
-            
-            if self.github_repo_config.github_token:
-                request.add_header('Authorization', f'token {self.github_repo_config.github_token}')
-            
-            with urllib.request.urlopen(request, timeout=10) as response:
-                tree_data = json.loads(response.read().decode('utf-8'))
-                
-                # 마크다운 파일 수집
-                markdown_files = [
-                    item['path']
-                    for item in tree_data.get('tree', [])
-                    if item.get('type') == 'blob' and item.get('path', '').endswith('.md')
-                ]
-
-                # 키워드 필터 적용
-                if self.keyword_filter_checkbox.isChecked():
-                    keywords = ['nexttask', 'wpd', 'prd', 'task']
-                    markdown_files = [
-                        path for path in markdown_files
-                        if any(keyword in path.lower() for keyword in keywords)
-                    ]
-
-                # docs_2 / docs 필터 적용
-                selected_prefixes = []
-                if self.docs2_filter_checkbox.isChecked():
-                    selected_prefixes.append('docs_2/')
-                if self.docs_filter_checkbox.isChecked():
-                    selected_prefixes.append('docs/')
-
-                if selected_prefixes:
-                    markdown_files = [
-                        path for path in markdown_files
-                        if any(path.startswith(prefix) for prefix in selected_prefixes)
-                    ]
-                
-                # 결과 리스트 갱신
-                self.doc_results_list.clear()
-
-                if markdown_files:
-                    for file_path in markdown_files:
-                        self.doc_results_list.addItem(file_path)
-
-                    self.log(f"\n✓ 발견된 문서 파일 ({len(markdown_files)}개)")
-
-                    # 첫 번째 항목 기본 선택
-                    first_file = markdown_files[0]
-                    self.doc_results_list.setCurrentRow(0)
-                    self.main_doc_input.setText(first_file)
-                    self.log(f"✓ 기본 선택: {first_file}")
-                    self.log("  리스트에서 다른 문서를 선택한 뒤 '선택 적용'을 누르세요")
-                else:
-                    self.log(f"✗ 마크다운 문서를 찾을 수 없습니다.")
-                    self.log(f"  docs_2/ 디렉토리에 파일이 없을 수 있습니다.")
-        
-        except Exception as e:
-            self.log(f"✗ 오류: {str(e)}")
-            self.log(f"  수동으로 파일 경로를 입력하거나 GitHub Token을 확인하세요")
-
-    def apply_selected_document(self, item=None):
-        """검색 결과에서 선택한 문서를 메인 문서로 적용"""
-        if item is None:
-            item = self.doc_results_list.currentItem()
-
-        if not item:
-            self.log("선택된 문서가 없습니다.")
-            return
-
-        selected_path = item.text()
-        self.main_doc_input.setText(selected_path)
-        self.log(f"✓ 문서 선택됨: {selected_path}")
-
-    def _on_document_double_clicked(self, item):
-        """리스트 항목 더블클릭 이벤트 핸들러"""
-        self.apply_selected_document(item)
-
-    def _on_apply_button_clicked(self):
-        """선택 적용 버튼 클릭 이벤트 핸들러"""
-        # 통합: 선택 적용 + 설정 저장까지 수행
-        self.save_github_config()
-    
-    def save_github_config(self):
-        """GitHub 설정 저장"""
-        # 문서 검색 결과에서 선택된 항목이 있으면 먼저 적용
-        current_item = self.doc_results_list.currentItem() if self.doc_results_list else None
-        if current_item is not None:
-            selected_path = current_item.text().strip()
-            if selected_path:
-                self.main_doc_input.setText(selected_path)
-                self.log(f"✓ 문서 선택됨(저장): {selected_path}")
-
-        repo_path = self.repo_input.text().strip()
-        main_doc = self.main_doc_input.text().strip()
-
-        if not repo_path:
-            self.log("저장소 경로가 비어 있습니다. 그래도 설정은 저장합니다.")
-
-        if not main_doc:
-            self.log("메인 문서 경로가 비어 있습니다. 그래도 설정은 저장합니다.")
-        
-        # 브랜치 설정 (UI에서 선택된 브랜치 우선)
-        selected_branch = self.branch_combo.currentText().strip()
-        if selected_branch:
-            if self.github_repo_config.is_valid:
-                self.github_repo_config.set_branch(selected_branch)
-            self.log(f"  저장할 브랜치: {selected_branch}")
-        else:
-            self.log(f"  경고: 브랜치가 선택되지 않음")
-        
-        # Raw GitHub URL 생성
-        raw_url = ""
-        if self.github_repo_config.is_valid and main_doc:
-            raw_url = self.github_repo_config.get_raw_content_url(main_doc)
-            if not raw_url:
-                self.log("Raw URL을 생성할 수 없습니다. 저장소 설정을 확인하세요.")
-        
-        # 설정 파일에 저장
-        config = load_config(self.config_file)
-        config["github_token"] = self.github_token_input.text().strip()
-        config["workflow_secret"] = self.workflow_secret_input.text().strip()
-        config["repo_path"] = repo_path
-        config["main_doc"] = main_doc
-        config["branch"] = selected_branch or self.github_repo_config.branch
-        config["redis_url"] = self.redis_url_input.text().strip()
-        config["agent_path"] = self.agent_path_input.text().strip()
-        config["docs2_filter"] = self.docs2_filter_checkbox.isChecked()
-        config["docs_filter"] = self.docs_filter_checkbox.isChecked()
-        config["keyword_filter"] = self.keyword_filter_checkbox.isChecked()
-        save_config(config, self.config_file)
-        
-        # 전역 변수 업데이트
-        global GITHUB_REPO_PATH, MAIN_DOCUMENT_PATH
-        GITHUB_REPO_PATH = repo_path
-        MAIN_DOCUMENT_PATH = main_doc
-        
-        self.log(f"✓ GitHub 설정 저장됨")
-        self.log(f"  저장소: {repo_path}")
-        self.log(f"  브랜치: {selected_branch or self.github_repo_config.branch}")
-        self.log(f"  메인 문서: {main_doc}")
-        if raw_url:
-            self.log(f"  Raw GitHub URL: {raw_url}")
-        self.log(f"  저장 위치: {self.config_file}")
-    
-    def browse_agent_path(self):
-        """Agent 경로 변경"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "main_agent.py 파일 선택",
-            str(Path(AGENT_PATH).parent),
-            "Python Files (*.py)"
-        )
-        
-        if file_path and file_path.endswith("main_agent.py"):
-            self.agent_path_input.setText(file_path)
-            self.parent_app.agent_path = file_path
-            self.log(f"✓ Agent 경로 변경됨: {file_path}")
-        elif file_path:
-            self.log("✗ main_agent.py 파일을 선택하세요.")
-    
-    def apply_env_vars(self):
-        """환경 변수 적용 및 저장"""
-        # 환경 변수 업데이트
-        self.env_vars["GITHUB_TOKEN"] = self.github_token_input.text().strip()
-        self.env_vars["WORKFLOW_SHARED_SECRET"] = self.workflow_secret_input.text().strip()
-        self.env_vars["REDIS_URL"] = self.redis_url_input.text().strip()
-        
-        # 시스템 환경 변수 설정
-        os.environ["GITHUB_TOKEN"] = self.env_vars["GITHUB_TOKEN"]
-        os.environ["WORKFLOW_SHARED_SECRET"] = self.env_vars["WORKFLOW_SHARED_SECRET"]
-        os.environ["REDIS_URL"] = self.env_vars["REDIS_URL"]
-        
-        # 설정 파일에 저장
-        config = load_config(self.config_file)
-        config["github_token"] = self.env_vars["GITHUB_TOKEN"]
-        config["workflow_secret"] = self.env_vars["WORKFLOW_SHARED_SECRET"]
-        save_config(config, self.config_file)
-        
-        self.log("✓ 환경 변수 적용 및 저장됨")
-        self.log(f"  저장 위치: {self.config_file}")
-        
-        # GitHub Token을 github_repo_config에도 적용
-        if self.env_vars["GITHUB_TOKEN"]:
-            self.github_repo_config.github_token = self.env_vars["GITHUB_TOKEN"]
-            self.log("✓ GitHubReporter 활성화됨")
-        else:
-            self.log("⚠ GitHubReporter 비활성화됨 (토큰 없음)")
-    
-    def log(self, message: str):
-        """로그 출력 (부모 앱의 로그 뷰어 사용)"""
-        if hasattr(self, "settings_log_viewer") and self.settings_log_viewer is not None:
-            self.settings_log_viewer.append(message)
-        self.parent_app.log(message)
-
-class MCPServerApp(QMainWindow):
-    """MCP 서버 제어 GUI"""
-    
-    def __init__(self):
-        super().__init__()
-        self.server_thread = None
-        self.current_port = None
-        self.agent_path = AGENT_PATH
-        self.github_repo_config = GitHubRepositoryConfig()
-        self.config_file = CONFIG_FILE
-
-        saved_config = load_config(self.config_file)
-        self.env_vars = {
-            "GITHUB_TOKEN": saved_config.get("github_token", os.getenv("GITHUB_TOKEN", "")),
-            "WORKFLOW_SHARED_SECRET": saved_config.get("workflow_secret", os.getenv("WORKFLOW_SHARED_SECRET", "")),
-            "REDIS_URL": os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
-        }
-
-        self.initUI()
-        self.check_prerequisites()
-
-    def initUI(self):
-        """UI 초기화"""
-        self.setWindowTitle("MCP Server Controller v1.0")
-        self.setGeometry(100, 100, 900, 650)
-
-        # 메뉴바
-        menu_bar = self.menuBar()
-        settings_menu = menu_bar.addMenu("설정")
-        settings_action = settings_menu.addAction("환경설정")
-        settings_action.triggered.connect(self.show_settings_dialog)
-
-        main_layout = QVBoxLayout()
-
-        # === 로그 뷰어 ===
-        log_group = QGroupBox("서버 로그")
-        log_layout = QVBoxLayout()
-        self.log_viewer = QTextEdit()
-        self.log_viewer.setReadOnly(True)
-        self.log_viewer.setStyleSheet(
-            "background-color: #1e1e1e; color: #dcdcdc; "
-            "font-family: 'Consolas', 'Courier New', monospace; "
-            "font-size: 10pt; padding: 5px;"
-        )
-        log_layout.addWidget(self.log_viewer)
-
-        log_btn_layout = QHBoxLayout()
-        clear_log_btn = QPushButton("로그 지우기")
-        clear_log_btn.clicked.connect(self.log_viewer.clear)
-        save_log_btn = QPushButton("로그 저장")
-        save_log_btn.clicked.connect(self.save_log)
-        log_btn_layout.addWidget(clear_log_btn)
-        log_btn_layout.addWidget(save_log_btn)
-        log_btn_layout.addStretch()
-        log_layout.addLayout(log_btn_layout)
-        log_group.setLayout(log_layout)
-        main_layout.addWidget(log_group)
-
-        # === 명령 입력 ===
-        cmd_layout = QHBoxLayout()
-        cmd_layout.addWidget(QLabel("Redis CLI:"))
-        self.redis_cmd_input = QLineEdit("KEYS checkpoint:*")
-        cmd_layout.addWidget(self.redis_cmd_input)
-        run_cmd_btn = QPushButton("실행")
-        run_cmd_btn.clicked.connect(self.run_redis_command)
-        cmd_layout.addWidget(run_cmd_btn)
-        main_layout.addLayout(cmd_layout)
-
-        term_cmd_layout = QHBoxLayout()
-        term_cmd_layout.addWidget(QLabel("터미널:"))
-        self.terminal_cmd_input = QLineEdit("echo Hello World")
-        term_cmd_layout.addWidget(self.terminal_cmd_input)
-        run_term_btn = QPushButton("실행")
-        run_term_btn.clicked.connect(self.run_terminal_command)
-        term_cmd_layout.addWidget(run_term_btn)
-        main_layout.addLayout(term_cmd_layout)
-
-        agent_input_layout = QHBoxLayout()
-        agent_input_layout.addWidget(QLabel("Agent 작업:"))
-        self.agent_input = QLineEdit("Create a work plan for step 5")
-        agent_input_layout.addWidget(self.agent_input)
-        run_agent_btn = QPushButton("실행")
-        run_agent_btn.clicked.connect(self.run_agent_test)
-        agent_input_layout.addWidget(run_agent_btn)
-        main_layout.addLayout(agent_input_layout)
-
-        container = QWidget()
-        container.setLayout(main_layout)
-        self.setCentralWidget(container)
-
-        self.statusBar().showMessage(f"로그 파일: {LOG_FILE}")
-
-        # === 상태 그룹 ===
-        status_group = QGroupBox("서버")
-        status_layout = QHBoxLayout()
-
-        status_left = QVBoxLayout()
-        self.url_label = QLabel("서버 URL: 아직 시작되지 않음")
-        self.url_label.setStyleSheet("color: #888; font-size: 10pt;")
-        self.status_label = QLabel("● 서버 정지됨")
-        self.status_label.setStyleSheet("font-size: 14pt; font-weight: bold; color: #FF6B6B;")
-        status_left.addWidget(self.url_label)
-        status_left.addWidget(self.status_label)
-
-        status_right = QVBoxLayout()
-        self.start_btn = QPushButton("🚀 서버 시작")
-        self.start_btn.setStyleSheet(
-            "QPushButton { background-color: #4CAF50; color: white; "
-            "font-size: 12pt; padding: 10px; border-radius: 5px; }"
-            "QPushButton:hover { background-color: #45a049; }"
-        )
-        self.start_btn.clicked.connect(self.start_server)
-        self.stop_btn = QPushButton("⏹ 서버 중지")
-        self.stop_btn.setStyleSheet(
-            "QPushButton { background-color: #f44336; color: white; "
-            "font-size: 12pt; padding: 10px; border-radius: 5px; }"
-            "QPushButton:hover { background-color: #da190b; }"
-            "QPushButton:disabled { background-color: #cccccc; }"
-        )
-
-        self.stop_btn.clicked.connect(self.stop_server)
-        self.stop_btn.setEnabled(False)
-        status_right.addWidget(self.start_btn)
-        status_right.addWidget(self.stop_btn)
-
-        status_layout.addLayout(status_left)
-        status_layout.addStretch()
-        status_layout.addLayout(status_right)
-        status_group.setLayout(status_layout)
-        main_layout.addWidget(status_group)
-
-    def show_settings_dialog(self):
-        """설정 다이얼로그 표시"""
-        dialog = SettingsDialog(self, self.config_file, self.github_repo_config, self.env_vars)
-        dialog.exec()
-
-    def check_prerequisites(self):
-        """사전 요구사항 확인"""
-        self.log("\n[체크] 사전 요구사항 확인 중...")
-
-        if check_redis_connection():
-            self.log(" Redis 연결 정상")
-        else:
-            self.log(" Redis 연결 실패 (서버가 실행되지 않았거나 설정 오류)")
-
-        if check_agent_path(self.agent_path):
-            self.log(f"✓ Agent 파일 존재: {self.agent_path}")
-        else:
-            self.log(f"✗ Agent 파일 없음: {self.agent_path}")
-            self.log("  → 환경설정에서 경로를 설정하세요")
-
-    def start_server(self):
-        """서버 시작"""
-        self.log("\n" + "=" * 60)
-        self.log("[시작] 서버 시작 중...")
-
-        if not check_agent_path(self.agent_path):
-            QMessageBox.critical(
-                self,
-                "오류",
-                f"Agent 파일을 찾을 수 없습니다:\n{self.agent_path}\n\n경로를 다시 설정하세요."
-            )
-            return
-
-        target_port = DEFAULT_PORT
-        self.log(f" 고정 포트 {target_port} 사용")
-
-        if not self._is_port_available(target_port):
-            self.log(f" 포트 {target_port}가 사용 중입니다")
-            QMessageBox.critical(self, "오류", f"포트 {target_port}가 이미 사용 중입니다.")
-            return
-
-        self.current_port = target_port
-        self.server_thread = ServerThread(target_port, self.agent_path)
-        self.server_thread.log_signal.connect(self.log)
-        self.server_thread.error_signal.connect(self.log_error)
-        self.server_thread.status_signal.connect(self.update_status)
-        self.server_thread.start()
-
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self.update_status(f"실행 중 (Port: {target_port})")
-
-    def _is_port_available(self, port: int) -> bool:
-        """포트 사용 가능 여부 확인"""
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            return s.connect_ex((SERVER_HOST, port)) != 0
-
-    def run_agent_test(self):
-        """Agent 작업 실행"""
-        user_input = self.agent_input.text().strip()
-        if not user_input:
-            self.log("Agent 작업을 입력하세요.")
-            return
-        self.log(f"[Agent] 실행: {user_input}")
-        result = run_agent_command(user_input, self.agent_path, self.env_vars)
-        self.log(f"[Agent 결과]\n{result}")
-
-    def run_redis_command(self):
-        """Redis CLI 명령 실행"""
-        command = self.redis_cmd_input.text().strip()
-        if not command:
-            self.log("Redis 명령을 입력하세요.")
-            return
-        self.log(f"[Redis CLI] 실행: {command}")
-        result = run_redis_cli_command(command)
-        self.log(f"[Redis CLI 결과]\n{result}")
-
-    def run_terminal_command(self):
-        """터미널 명령 실행"""
-        command = self.terminal_cmd_input.text().strip()
-        if not command:
-            self.log("터미널 명령을 입력하세요.")
-            return
-        self.log(f"[터미널] 실행: {command}")
-        result = run_terminal_command(command)
-        self.log(f"[터미널 결과]\n{result}")
-
-    def stop_server(self):
-        """서버 중지"""
-        if self.server_thread and self.server_thread.isRunning():
-            self.log("\n[중지] 서버 중지 중...")
-            self.server_thread.stop()
-            self.server_thread.wait(3000)
-            if self.server_thread.isRunning():
-                self.log(" 강제 종료")
-                self.server_thread.terminate()
-            else:
-                self.log(" 정상 종료")
-
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.update_status("서버 정지됨")
-        self.current_port = None
-
-    def log(self, message: str):
-        """로그 출력"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        formatted = f"[{timestamp}] {message}"
-        self.log_viewer.append(formatted)
-        logger.info(message)
-
-    def log_error(self, message: str):
-        """오류 로그"""
-        self.log_viewer.append(f"<span style='color:#FF6B6B;'>{message}</span>")
-        logger.error(message)
-
-    def update_status(self, status: str):
-        """상태 업데이트"""
-        if "실행 중" in status:
-            color = "#4CAF50"
-            icon = "●"
-        elif "초기화" in status:
-            color = "#FFA726"
-            icon = "◐"
-        elif "오류" in status:
-            color = "#FF6B6B"
-            icon = "✗"
-        else:
-            color = "#888"
-            icon = "○"
-
-        self.status_label.setText(f"{icon} {status}")
-        self.status_label.setStyleSheet(
-            f"font-size: 14pt; font-weight: bold; color: {color};"
-        )
-
-        if self.current_port:
-            self.url_label.setText(f"서버 URL: http://localhost:{self.current_port}/")
-        else:
-            self.url_label.setText("서버 URL: 아직 시작되지 않음")
-
-    def save_log(self):
-        """로그 파일로 저장"""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "로그 저장",
-            str(LOG_DIR / f"log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"),
-            "Text Files (*.txt)"
-        )
-        if file_path:
-            try:
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write(self.log_viewer.toPlainText())
-                self.log(f"로그 저장됨: {file_path}")
-            except Exception as e:
-                self.log_error(f"로그 저장 실패: {e}")
-
-    def closeEvent(self, event):
-        """종료 시 서버 중지"""
-        if self.server_thread and self.server_thread.isRunning():
-            reply = QMessageBox.question(
-                self,
-                "종료 확인",
-                "서버가 실행 중입니다. 종료하시겠습니까?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.stop_server()
-                event.accept()
-            else:
-                event.ignore()
-        else:
-            event.accept()
-
-# ============================================================================
-# 메인 실행
+# UI components (SettingsDialog, MCPServerApp) have been moved to:
+# - vibeStation_monitor/main_window.py
+# 
+# To use this server core directly:
+# 
+# from MCP_server import ServerThread
+# 
+# server = ServerThread(port=8000, agent_path="/path/to/main_agent.py")
+# server.log_signal.connect(lambda msg: print(msg))
+# server.error_signal.connect(lambda msg: print(f"ERROR: {msg}"))
+# server.status_signal.connect(lambda msg: print(f"STATUS: {msg}"))
+# server.start()
 # ============================================================================
 
 if __name__ == "__main__":
+    """
+    Example standalone server startup (minimal UI-free version)
+    For full GUI application, use vibeStation_monitor instead.
+    """
+    import sys
+    from PyQt6.QtWidgets import QApplication
+    
     try:
-        logger.info("MCP Server GUI 시작")
+        logger.info("MCP Server Core - Standalone Mode")
         
-        # PyQt6 애플리케이션
+        # Check prerequisites
+        if not check_redis_connection():
+            logger.error("Redis connection failed. Please start Redis server first.")
+            sys.exit(1)
+        
+        if not check_agent_path(AGENT_PATH):
+            logger.error(f"Agent path not found: {AGENT_PATH}")
+            logger.info("Please update AGENT_PATH in this file or use the GUI version.")
+            sys.exit(1)
+        
+        # Find available port
+        port = find_available_port(DEFAULT_PORT, DEFAULT_PORT + 100)
+        if not port:
+            logger.error("No available ports found")
+            sys.exit(1)
+        
+        logger.info(f"Starting server on port {port}...")
+        logger.info("For full GUI application, please use vibeStation_monitor module.")
+        
+        # Create minimal QApplication for QThread
         app = QApplication(sys.argv)
-        app.setApplicationName("MCP Server Controller")
-        app.setOrganizationName("TurboSystem")
         
-        # 메인 윈도우
-        window = MCPServerApp()
-        window.show()
+        # Start server
+        server = ServerThread(port=port, agent_path=AGENT_PATH)
+        server.log_signal.connect(lambda msg: logger.info(msg))
+        server.error_signal.connect(lambda msg: logger.error(msg))
+        server.status_signal.connect(lambda msg: logger.info(f"Status: {msg}"))
+        server.start()
         
-        # 이벤트 루프 실행
-        exit_code = app.exec()
-        logger.info(f"애플리케이션 종료 (코드: {exit_code})")
-        sys.exit(exit_code)
+        logger.info("Server started. Press Ctrl+C to stop.")
+        logger.info(f"Server URL: http://{SERVER_HOST}:{port}")
         
+        # Run event loop
+        sys.exit(app.exec())
+        
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user")
+        sys.exit(0)
     except Exception as e:
-        logger.critical(f"치명적 오류: {e}\n{traceback.format_exc()}")
+        logger.critical(f"Fatal error: {e}\n{traceback.format_exc()}")
         sys.exit(1)
