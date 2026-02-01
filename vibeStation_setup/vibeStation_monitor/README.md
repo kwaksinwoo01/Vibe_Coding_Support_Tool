@@ -1,74 +1,156 @@
-# vibeStation Monitor
+# Monitor Module
 
-AI 코딩 에이전트 작업 모니터링 및 로그 관제 도구
+Real-time monitoring and control interface for vibeStation MCP agents.
 
-## 기능
+## Purpose
 
-- **실시간 로그 모니터링**: AI 코딩 에이전트의 작업 로그 실시간 수신 및 표시
-- **티어 기반 분류**: A-F 티어로 분류된 작업 단계별 모니터링
-- **지침 업데이트**: 모니터링 중 copilot-instructions.md 파일에 지침 추가
-- **한국어 지원**: 티어 이름과 인터페이스를 한국어로 표시
+This module provides a comprehensive monitoring and control interface for the MCP (Model Context Protocol) server and AI coding agents. It displays real-time logs, manages server settings, and provides GitHub repository integration.
 
-## 사용법
+## Components
 
-### 실행
+### VibeStationMonitor
+Main application window for monitoring AI coding agents.
+
+**Features**:
+- Real-time tier-based log display
+- Status indicators for agent activities
+- Server control and management
+- GitHub repository configuration
+- Redis command execution
+- Terminal command interface
+
+**Usage**:
+```python
+from vibeStation_monitor.main_window import VibeStationMonitor
+
+app = QApplication(sys.argv)
+monitor = VibeStationMonitor()
+monitor.show()
+sys.exit(app.exec())
+```
+
+### SettingsDialog
+Configuration dialog for GitHub repository connections and server settings.
+
+**Features**:
+- GitHub repository configuration (HTTPS, SSH, CLI formats)
+- GitHub Personal Access Token management
+- Branch selection
+- Main document path configuration
+- Redis connection settings
+- Agent path configuration
+
+**Tabs**:
+1. **GitHub Repository**: Repository connection and token settings
+2. **Server Settings**: Redis, agent paths, and server configuration
+
+**Usage**:
+```python
+from vibeStation_monitor.main_window import SettingsDialog
+from common.config_manager import load_config
+
+config_file = Path("config/monitor_config.json")
+github_config = GitHubRepositoryConfig()
+
+dialog = SettingsDialog(self, config_file, github_config, env_vars)
+dialog.exec()
+```
+
+## Architecture
+
+```
+VibeStationMonitor (Main Window)
+├── LogDisplayWidget (from common/)
+│   ├── Tier filtering (A-F)
+│   ├── Time-stamped entries
+│   └── Color-coded display
+├── SettingsDialog
+│   ├── GitHub tab
+│   └── Server tab
+└── Status indicators
+```
+
+## Log Tiers
+
+The monitor supports the following tier classification:
+- **Tier A (기획)**: Planning - Red
+- **Tier B (수행)**: Execution - Yellow  
+- **Tier C (수정)**: Modification - Blue
+- **Tier D (분석)**: Analysis - Green
+- **Tier E (관리)**: Management - Gray
+- **Tier F (기타)**: Other - Cyan
+
+## Integration
+
+### With Common Module
+- `LogDisplayWidget`: Log display widget
+- `ServerThread`: FastAPI server for receiving logs
+- `GitHubTokenHelpDialog`: Token generation help
+- `load_config`, `save_config`: Configuration management
+
+### With MCP Server Core
+- `GitHubRepositoryConfig`: Repository configuration utilities
+- Server control and status monitoring
+
+## Entry Points
+
+### Main Application (`app.py`)
+Simple monitoring interface with log display:
 ```bash
-python run_vibestation_monitor.bat
-# 또는
 python vibeStation_monitor/app.py
 ```
 
-### 워크플로우
-
-1. **앱 실행**: vibeStation Monitor를 실행합니다
-2. **서버 시작**: FastAPI 서버가 자동으로 시작됩니다 (포트 18989)
-3. **로그 수신**: AI 에이전트가 `/stream` 엔드포인트로 로그를 전송합니다
-4. **실시간 모니터링**: 티어별로 분류된 로그를 실시간으로 확인합니다
-5. **지침 업데이트**: 필요시 새로운 지침을 추가하여 Instructions 파일 업데이트
-
-## 인터페이스 설명
-
-### 상태 표시줄
-- 현재 에이전트 상태 표시 (대기 중, 실행 중 등)
-- 활성 티어와 상태 정보 표시
-
-### 로그 뷰어
-- 실시간 로그 스트리밍
-- 티어별 색상 구분 (A: 빨강, B: 노랑, C: 파랑 등)
-- 한국어 티어 이름 표시 (기획, 수행, 수정, 분석, 관리, 기타)
-
-### 지침 입력
-- 새로운 AI 지침을 한국어로 입력
-- Instructions 파일에 자동으로 추가
-
-## 티어 시스템
-
-| 티어 | 이름 | 설명 |
-|------|------|------|
-| A | 기획 | 작업 계획 및 설계 단계 |
-| B | 수행 | 실제 작업 실행 단계 |
-| C | 수정 | 작업 수정 및 개선 단계 |
-| D | 분석 | 오류 분석 및 디버깅 단계 |
-| E | 관리 | 문서 및 파일 관리 단계 |
-| F | 기타 | 기타 작업 및 폴백 단계 |
-
-## API 엔드포인트
-
-### POST /stream
-AI 에이전트가 로그를 전송하는 엔드포인트
-
-**요청 본문:**
-```json
-{
-  "tier": "A",
-  "msg": "작업 시작",
-  "status": "running"
-}
+### Full Application (`main_window.py` via MCP_server.py)
+Complete monitoring and control interface:
+```bash
+python mcp_suver/MCP_server.py
 ```
 
-## 특징
+## Configuration Files
 
-- **실시간 모니터링**: WebSocket이나 HTTP 스트리밍을 통한 실시간 로그 수신
-- **다국어 지원**: 한국어 인터페이스와 티어 이름 표시
-- **직관적 UI**: 게임 스타일의 터미널 인터페이스
-- **자동 서버**: 앱 실행 시 FastAPI 서버 자동 시작
+- **Monitor Config**: `vibeStation_monitor/config/monitor_config.json`
+  - GitHub token
+  - Repository settings
+  - Server configuration
+  
+- **Log Files**: `vibeStation_monitor/logs/monitor_YYYYMMDD_HHMMSS.log`
+
+## Dependencies
+
+- PyQt6 (for UI)
+- Common module components
+- MCP server core utilities
+- httpx (for HTTP requests)
+- subprocess, socket (for system operations)
+
+## Features
+
+### GitHub Repository Management
+- Auto-detect repository type (HTTPS, SSH, CLI)
+- Parse owner and repository name
+- Fetch available branches
+- Validate repository access
+- Token-based authentication
+
+### Server Control
+- Start/stop MCP server
+- Monitor server status
+- View server logs
+- Execute Redis commands
+- Run terminal commands
+- Test agent execution
+
+### Log Monitoring
+- Real-time log streaming via FastAPI
+- Tier-based filtering
+- Timestamp tracking
+- Color-coded status
+- Log persistence and export
+
+## Notes
+
+- Default monitor port: 18989 (configurable)
+- Supports Korean and English interfaces
+- Auto-saves configuration on changes
+- Provides comprehensive error handling
+- Includes GitHub token generation guide
