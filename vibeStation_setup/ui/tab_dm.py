@@ -717,8 +717,8 @@ class TepDM(QWidget):
 
         layout.addWidget(self.tabs)
 
-        # Status bar
-        self.statusBar().showMessage("Ready - Setup Mode")
+        # Status bar - removed for QWidget compatibility
+        # self.statusBar().showMessage("Ready - Setup Mode")
     
     def save_current_tab(self):
         """Save content of current tab."""

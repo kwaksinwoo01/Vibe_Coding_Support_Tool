@@ -6,6 +6,7 @@ This module provides the MCP server control interface as a tab widget.
 import sys
 import os
 import socket
+import subprocess
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +28,10 @@ from settings.constants import (
     LOG_DIR, LOG_FILE, CONFIG_DIR, CONFIG_FILE
 )
 
+# Logger setup
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
@@ -40,21 +45,6 @@ def check_redis_connection() -> bool:
         return True
     except Exception:
         return False
-
-def check_agent_path(agent_path: str) -> bool:
-    """Agent 파일 존재 확인"""
-    from pathlib import Path
-    return Path(agent_path).exists() if agent_path else False
-
-def run_agent_command(user_input: str, agent_path: str, env_vars: dict = None) -> str:
-    """Agent 명령 실행"""
-    try:
-        import subprocess
-        cmd = ["python", agent_path, user_input]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        return result.stdout if result.stdout else result.stderr
-    except Exception as e:
-        return f"Error: {str(e)}"
 
 def run_redis_cli_command(command: str) -> str:
     """Redis CLI 명령 실행"""
@@ -108,7 +98,6 @@ class TepMCP(QWidget):
         
         self.server_thread = None
         self.current_port = None
-        self.agent_path = AGENT_PATH
 
         self.initUI()
         self.check_prerequisites()
@@ -239,24 +228,12 @@ class TepMCP(QWidget):
         else:
             self.log(" Redis 연결 실패 (서버가 실행되지 않았거나 설정 오류)")
 
-        if check_agent_path(self.agent_path):
-            self.log(f"✓ Agent 파일 존재: {self.agent_path}")
-        else:
-            self.log(f"✗ Agent 파일 없음: {self.agent_path}")
-            self.log("  → 환경설정에서 경로를 설정하세요")
+        self.log("✓ Agent 모듈(main_agent.py) 번들링됨 (경로 확인 불필요)")
 
     def start_server(self):
         """서버 시작"""
         self.log("\n" + "=" * 60)
         self.log("[시작] 서버 시작 중...")
-
-        if not check_agent_path(self.agent_path):
-            QMessageBox.critical(
-                self,
-                "오류",
-                f"Agent 파일을 찾을 수 없습니다:\n{self.agent_path}\n\n경로를 다시 설정하세요."
-            )
-            return
 
         target_port = DEFAULT_PORT
         self.log(f" 고정 포트 {target_port} 사용")
@@ -267,7 +244,7 @@ class TepMCP(QWidget):
             return
 
         self.current_port = target_port
-        self.server_thread = ServerThread(target_port, self.agent_path)
+        self.server_thread = ServerThread(target_port)
         self.server_thread.log_signal.connect(self.log)
         self.server_thread.error_signal.connect(self.log_error)
         self.server_thread.status_signal.connect(self.update_status)
@@ -283,14 +260,20 @@ class TepMCP(QWidget):
             return s.connect_ex((SERVER_HOST, port)) != 0
 
     def run_agent_test(self):
-        """Agent 작업 실행"""
+        """Agent 작업 실행 (main_agent.py 모듈 직접 사용)"""
         user_input = self.agent_input.text().strip()
         if not user_input:
             self.log("Agent 작업을 입력하세요.")
             return
         self.log(f"[Agent] 실행: {user_input}")
-        result = run_agent_command(user_input, self.agent_path, self.env_vars)
-        self.log(f"[Agent 결과]\n{result}")
+        result = subprocess.run(
+            [sys.executable, "-m", "vibeStation_setup.mcp_suver.main_agent", user_input],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        output = result.stdout if result.stdout else result.stderr
+        self.log(f"[Agent 결과]\n{output}")
 
     def run_redis_command(self):
         """Redis CLI 명령 실행"""

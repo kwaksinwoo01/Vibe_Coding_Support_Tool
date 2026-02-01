@@ -32,7 +32,7 @@ class LogData(BaseModel):
 # ============================================
 class CommSignal:
     """UI와 통신할 전역 시그널 관리"""
-    log_signal = None
+    log_signal: Optional[Any] = None
 
 
 class ServerThread(QThread):
@@ -50,17 +50,16 @@ class ServerThread(QThread):
     status_signal = pyqtSignal(str)
     received = pyqtSignal(dict)  # common/server_thread.py에서
 
-    def __init__(self, port: int = 18989, agent_path: Optional[str] = None):
+    def __init__(self, port: int = 18989):
         super().__init__()
         self.port = port
-        self.agent_path = agent_path
         self.app = None
         self.redis_client = None
         self.checkpointer = None
         self._running = True
         
-        # 전역 시그널 설정
-        CommSignal.log_signal = self.received
+        # 전역 시그널 설정 (타입 체크 무시)
+        CommSignal.log_signal = self.received  # type: ignore
 
     def run(self):
         """서버 실행"""
@@ -100,7 +99,6 @@ class ServerThread(QThread):
             return {
                 "status": "MCP Server Running",
                 "port": self.port,
-                "agent_path": self.agent_path,
                 "timestamp": datetime.now().isoformat()
             }
         
@@ -147,36 +145,29 @@ class ServerThread(QThread):
         
         @self.app.post("/execute")
         async def execute_task(request: Request):
-            """에이전트 작업 실행"""
+            """에이전트 작업 실행 (main_agent.py 모듈 직접 사용)"""
             try:
                 data = await request.json()
                 user_input = data.get("user_input", "")
                 
                 self.log_signal.emit(f"[실행] 요청: {user_input[:100]}")
                 
-                # main_agent.py 호출
-                if self.agent_path and not os.path.exists(self.agent_path):
-                    return {"status": "error", "message": "Agent 경로 오류"}
+                # main_agent.py 모듈을 subprocess로 실행
+                result = subprocess.run(
+                    [sys.executable, "-m", "vibeStation_setup.mcp_suver.main_agent", user_input],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
                 
-                # 실제 실행은 subprocess로 처리
-                if self.agent_path:
-                    result = subprocess.run(
-                        [sys.executable, self.agent_path, user_input],
-                        capture_output=True,
-                        text=True,
-                        timeout=60
-                    )
-                    
-                    self.log_signal.emit(f"[실행] 완료 (코드: {result.returncode})")
-                    
-                    return {
-                        "status": "success" if result.returncode == 0 else "error",
-                        "stdout": result.stdout,
-                        "stderr": result.stderr,
-                        "returncode": result.returncode
-                    }
-                else:
-                    return {"status": "error", "message": "Agent 경로 미설정"}
+                self.log_signal.emit(f"[실행] 완료 (코드: {result.returncode})")
+                
+                return {
+                    "status": "success" if result.returncode == 0 else "error",
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "returncode": result.returncode
+                }
                 
             except Exception as e:
                 error_msg = f"실행 오류: {e}"
@@ -193,8 +184,3 @@ class ServerThread(QThread):
                 self.redis_client.close()
             except Exception as e:
                 logger.warning(f"Redis 종료 오류: {e}")
-    
-    def set_agent_path(self, path: str):
-        """에이전트 경로 설정"""
-        self.agent_path = path
-        self.log_signal.emit(f"[에이전트] 경로 설정: {path}")

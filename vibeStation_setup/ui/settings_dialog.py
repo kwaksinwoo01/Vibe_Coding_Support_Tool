@@ -92,10 +92,6 @@ class SettingsDialog(QDialog):
         if "redis_url" in saved_config:
             self.redis_url_input.setText(saved_config["redis_url"])
 
-        # Agent 경로 로드
-        if "agent_path" in saved_config:
-            self.agent_path_input.setText(saved_config["agent_path"])
-
         # 문서 검색 옵션 로드
         if "docs2_filter" in saved_config:
             self.docs2_filter_checkbox.setChecked(bool(saved_config["docs2_filter"]))
@@ -239,16 +235,10 @@ class SettingsDialog(QDialog):
         config_group = QGroupBox("Agent 설정")
         config_layout = QVBoxLayout()
         
-        # Agent 경로
-        agent_layout = QHBoxLayout()
-        agent_layout.addWidget(QLabel("Agent 경로:"))
-        self.agent_path_input = QLineEdit(AGENT_PATH)
-        self.agent_path_input.setReadOnly(True)
-        agent_layout.addWidget(self.agent_path_input)
-        browse_agent_btn = QPushButton("변경")
-        browse_agent_btn.clicked.connect(self.browse_agent_path)
-        agent_layout.addWidget(browse_agent_btn)
-        config_layout.addLayout(agent_layout)
+        # Agent 경로 - 제거됨 (main_agent.py가 번들링됨)
+        agent_info = QLabel("Agent 모듈: vibeStation_setup.mcp_suver.main_agent (번들링됨)")
+        agent_info.setStyleSheet("color: #4CAF50; font-weight: bold;")
+        config_layout.addWidget(agent_info)
         
         # Redis URL
         redis_url_layout = QHBoxLayout()
@@ -644,7 +634,6 @@ class SettingsDialog(QDialog):
         config["main_doc"] = main_doc
         config["branch"] = selected_branch or self.github_repo_config.branch
         config["redis_url"] = self.redis_url_input.text().strip()
-        config["agent_path"] = self.agent_path_input.text().strip()
         config["docs2_filter"] = self.docs2_filter_checkbox.isChecked()
         config["docs_filter"] = self.docs_filter_checkbox.isChecked()
         config["keyword_filter"] = self.keyword_filter_checkbox.isChecked()
@@ -663,21 +652,6 @@ class SettingsDialog(QDialog):
             self.log(f"  Raw GitHub URL: {raw_url}")
         self.log(f"  저장 위치: {self.config_file}")
     
-    def browse_agent_path(self):
-        """Agent 경로 변경"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "main_agent.py 파일 선택",
-            str(Path(AGENT_PATH).parent),
-            "Python Files (*.py)"
-        )
-        
-        if file_path and file_path.endswith("main_agent.py"):
-            self.agent_path_input.setText(file_path)
-            self.parent_app.agent_path = file_path
-            self.log(f"✓ Agent 경로 변경됨: {file_path}")
-        elif file_path:
-            self.log("✗ main_agent.py 파일을 선택하세요.")
     
     def apply_env_vars(self):
         """환경 변수 적용 및 저장"""
