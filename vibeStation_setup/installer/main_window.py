@@ -279,11 +279,11 @@ class SetupWizardWidget(QWidget):
         group.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         layout = QFormLayout()
         
-        # 호완성 유지 규칙
+        # 호환성 유지 규칙
         self.compatibility_rules_edit = QTextEdit()
         self.compatibility_rules_edit.setMaximumHeight(80)
         self.compatibility_rules_edit.setPlaceholderText("프로그램의 호환성 유지 규칙을 설명해주세요.")
-        layout.addRow("호완성 유지 규칙:", self.compatibility_rules_edit)
+        layout.addRow("호환성 유지 규칙:", self.compatibility_rules_edit)
         
         # Key Design Patterns
         self.design_patterns_edit = QTextEdit()

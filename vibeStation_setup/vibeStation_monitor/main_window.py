@@ -35,7 +35,8 @@ from common.server_thread import ServerThread as MonitorServerThread
 # Constants
 # ============================================================================
 
-AGENT_PATH = os.getenv("AGENT_PATH", r"C:\Users\user\Documents\github\turbo-system\.github\agents\tool\main_agent.py")
+# Agent path - should be configured via environment variable or settings dialog
+AGENT_PATH = os.getenv("AGENT_PATH", "")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
