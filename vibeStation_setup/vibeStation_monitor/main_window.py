@@ -35,7 +35,7 @@ from common.server_thread import ServerThread as MonitorServerThread
 # Constants
 # ============================================================================
 
-AGENT_PATH = r"C:\Users\user\Documents\github\turbo-system\.github\agents\tool\main_agent.py"
+AGENT_PATH = os.getenv("AGENT_PATH", r"C:\Users\user\Documents\github\turbo-system\.github\agents\tool\main_agent.py")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -244,7 +244,7 @@ class GitHubRepositoryConfig:
                                 'name': branch['name'],
                                 'date': commit_date
                             })
-                        except:
+                        except Exception:
                             branches_with_date.append({
                                 'name': branch['name'],
                                 'date': '0000-00-00T00:00:00Z'
@@ -674,7 +674,6 @@ class SettingsDialog(QDialog):
         
         if self.github_repo_config.is_valid:
             self.github_repo_config.set_branch(branch_name)
-            self.log(f"")
             self.log(f"============================================================")
             self.log(f"[브랜치 선택] {branch_name}")
             self.log(f"============================================================")
