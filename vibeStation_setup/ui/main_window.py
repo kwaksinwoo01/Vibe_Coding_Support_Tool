@@ -44,14 +44,52 @@ class MainWindow(QMainWindow):
         
         self.initUI()
         self.load_repository_config()
+        self.setup_connections()
         self.start_server()
+    
+    def setup_connections(self):
+        """탭 컴포넌트와 메인 윈도우 간 시그널/슬롯 연결"""
+        # TepMCP 시그널 연결
+        if hasattr(self, 'mcp_tab_ui'):
+            self.mcp_tab_ui.server_started.connect(self.on_server_started)
+            self.mcp_tab_ui.server_stopped.connect(self.on_server_stopped)
+            self.mcp_tab_ui.status_changed.connect(self.on_tab_status_changed)
+            self.mcp_tab_ui.log_message.connect(self.on_tab_log_message)
+        
+        # TepDM 시그널 연결
+        if hasattr(self, 'dm_tab_ui'):
+            self.dm_tab_ui.instructions_saved.connect(self.on_instructions_saved)
+            self.dm_tab_ui.status_changed.connect(self.on_tab_status_changed)
+    
+    def on_server_started(self, port: int):
+        """MCP 서버 시작됨 - TepMCP 탭에서 호출"""
+        self.statusBar().showMessage(f"MCP 서버 시작됨 (포트: {port})")
+    
+    def on_server_stopped(self):
+        """MCP 서버 중지됨 - TepMCP 탭에서 호출"""
+        self.statusBar().showMessage("MCP 서버 중지됨")
+    
+    def on_tab_status_changed(self, status: str):
+        """탭 상태 변경"""
+        self.statusBar().showMessage(status)
+    
+    def on_tab_log_message(self, message: str):
+        """탭에서 로그 메시지 수신"""
+        # 로그 탭으로 메시지 전달
+        if hasattr(self, 'mcp_log_ui'):
+            self.mcp_log_ui.add_log('F', message, '완료')
+    
+    def on_instructions_saved(self, file_path: str):
+        """Instructions 파일 저장됨"""
+        self.statusBar().showMessage(f"Instructions 파일 저장됨: {file_path}")
 
     def initUI(self):
         """UI 초기화"""
         self.setWindowTitle("코딩에이전트 자동 문서관리 v1.0")
         self.setGeometry(100, 100, 1000, 700)
 
-        # 메뉴바
+        # 메뉴바 - MainWindow에서만 생성 (SINGLE POINT OF MENUBAR CREATION)
+        # 탭 컴포넌트에서는 menubar를 생성하지 않음
         menu_bar = self.menuBar()
         settings_menu = menu_bar.addMenu("설정")
         settings_action = settings_menu.addAction("환경설정")
@@ -171,8 +209,16 @@ class MainWindow(QMainWindow):
             self.mcp_log_ui.update_agent_status(status)
 
     def closeEvent(self, event):
-        """윈도우 종료 이벤트"""
+        """윈도우 종료 이벤트 - 모든 서버 정리"""
+        # MainWindow의 서버 스레드 정리
         if self.server_thread and self.server_thread.isRunning():
             self.server_thread.stop()
             self.server_thread.wait()
+        
+        # TepMCP 탭의 서버 스레드도 정리
+        if hasattr(self, 'mcp_tab_ui') and self.mcp_tab_ui.server_thread:
+            if self.mcp_tab_ui.server_thread.isRunning():
+                self.mcp_tab_ui.stop_server()
+                self.mcp_tab_ui.server_thread.wait()
+        
         event.accept()
