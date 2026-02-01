@@ -19,7 +19,7 @@ from .tab_dm import TepDM
 from .tep_mcp import TepMCP
 from .tab_mcp_log import MCPLogTab
 from mcp_suver.core.server_thread import ServerThread
-from settings.config_manager import load_config, save_config, load_env_vars
+from settings.config_manager import load_env_vars, load_encrypted_config, ENCRYPTION_AVAILABLE
 from settings.github_repository_config import GitHubRepositoryConfig
 
 class MainWindow(QMainWindow):
@@ -34,7 +34,9 @@ class MainWindow(QMainWindow):
         # 설정 파일 경로
         config_dir = Path(__file__).parent.parent / "config"
         config_dir.mkdir(exist_ok=True)
-        self.config_file = config_dir / "main_config.json"
+        # Use encrypted config file as the single source of truth
+        from settings.constants import ENCRYPTED_CONFIG_FILE
+        self.config_file = ENCRYPTED_CONFIG_FILE
         
         # 환경 변수 로드
         self.env_vars = load_env_vars(self.config_file)
@@ -148,8 +150,16 @@ class MainWindow(QMainWindow):
         self.server_tab.setLayout(layout)
 
     def load_repository_config(self):
-        """저장된 저장소 설정 로드"""
-        saved_config = load_config(self.config_file)
+        """저장된 저장소 설정 로드 (암호화된 설정 우선)"""
+        saved_config = {}
+        # 암호화된 설정만 사용 (폴백 없음)
+        if ENCRYPTION_AVAILABLE:
+            try:
+                saved_config = load_encrypted_config(self.config_file.parent)
+            except Exception:
+                saved_config = {}
+        else:
+            saved_config = {}
         
         repo_path = saved_config.get("repo_path", "")
         if repo_path and self.github_repo_config.parse_repository(repo_path):

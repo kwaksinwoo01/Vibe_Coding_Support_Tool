@@ -16,7 +16,7 @@ import httpx
 from settings.constants import (
     AGENT_PATH, FAVICON_PATH, GITHUB_REPO_PATH, MAIN_DOCUMENT_PATH,
     DEFAULT_PORT, SERVER_HOST,
-    LOG_DIR, LOG_FILE, CONFIG_DIR, CONFIG_FILE
+    LOG_DIR, LOG_FILE, CONFIG_DIR, ENCRYPTED_CONFIG_FILE
 )
 # 로깅 설정
 logging.basicConfig(

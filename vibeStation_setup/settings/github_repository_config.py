@@ -6,7 +6,6 @@ Configuration class for managing GitHub repository settings and API interactions
 """
 
 import os
-import subprocess
 import httpx
 import urllib.request
 import json
@@ -90,43 +89,24 @@ class GitHubRepositoryConfig:
             
             elif self.repo_type == "local":
                 # 로컬 경로에서 .git 확인
-                git_dir = os.path.join(self.repo_path, ".git")
-                if os.path.isdir(git_dir):
-                    # git remote -v로 owner/repo 추출
-                    result = subprocess.run(
-                        ["git", "-C", self.repo_path, "remote", "-v"],
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    if result.returncode == 0:
-                        # origin  https://github.com/owner/repo.git (fetch)
-                        for line in result.stdout.split("\n"):
-                            if "origin" in line and "github.com" in line:
-                                # URL 추출
-                                parts = line.split()
-                                if len(parts) >= 2:
-                                    url = parts[1]
-                                    config = GitHubRepositoryConfig()
-                                    if config.parse_repository(url):
-                                        self.owner = config.owner
-                                        self.repo_name = config.repo_name
-                                        self.branch = config.branch
-                                        self.is_valid = True
-                                        return True
-                    
-                    # git symbolic-ref로 기본 브랜치 감지
-                    result = subprocess.run(
-                        ["git", "-C", self.repo_path, "symbolic-ref", "refs/remotes/origin/HEAD"],
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    if result.returncode == 0:
-                        # refs/remotes/origin/main
-                        branch_ref = result.stdout.strip()
-                        if "/" in branch_ref:
-                            self.branch = branch_ref.split("/")[-1]
+                git_dir = self._resolve_git_dir(self.repo_path)
+                if git_dir and os.path.isdir(git_dir):
+                    # .git/config에서 origin URL 추출
+                    url = self._read_origin_url(git_dir)
+                    if url and "github.com" in url:
+                        config = GitHubRepositoryConfig()
+                        if config.parse_repository(url):
+                            self.owner = config.owner
+                            self.repo_name = config.repo_name
+                            self.is_valid = True
+
+                    # .git/HEAD에서 현재 브랜치 감지
+                    head_branch = self._read_head_branch(git_dir)
+                    if head_branch:
+                        self.branch = head_branch
+
+                    if self.is_valid:
+                        return True
         
         except Exception as e:
             self.is_valid = False
@@ -182,9 +162,6 @@ class GitHubRepositoryConfig:
         """GitHub API로 기본 브랜치 감지"""
         if not self.is_valid:
             return "main"
-
-        if not self.github_token:
-            return "main"
         
         try:
             import urllib.request
@@ -203,23 +180,12 @@ class GitHubRepositoryConfig:
             return "main"
 
     def fetch_available_branches(self, use_git: bool = False) -> list:
-        """GitHub API로 활성 브랜치 목록 조회 (또는 git 명령어 사용)"""
+        """GitHub API로 활성 브랜치 목록 조회"""
         if not self.is_valid:
             return []
 
-        if not self.github_token:
-            print("[GitHub API] GitHub Token 필요 - 브랜치 조회 차단")
-            return []
-        
-        # git 명령어 방식 시도
-        if use_git or self.repo_type == "local":
-            return self._fetch_branches_via_git()
-        
-        # GitHub API 방식 시도
+        # GitHub API 방식 시도 (토큰 없이도 제한 범위 내 호출)
         branches = self._fetch_branches_via_api()
-        if not branches:
-            # API 실패 시 git 방식으로 폴백
-            branches = self._fetch_branches_via_git()
         
         return branches
     
@@ -275,6 +241,17 @@ class GitHubRepositoryConfig:
                 return self.available_branches
                 
         except urllib.error.HTTPError as e:
+            if e.code == 401:
+                detail = ""
+                try:
+                    detail = e.read().decode("utf-8")
+                except Exception:
+                    detail = ""
+                token_hint = "있음" if self.github_token else "없음"
+                print(f"[GitHub API] 401 Unauthorized - 토큰 인증 실패 (토큰: {token_hint})")
+                if detail:
+                    print(f"[GitHub API] 상세 응답: {detail}")
+                return []
             if e.code == 403:
                 print(f"[GitHub API] 403 Forbidden - API 제한 초과 (인증 토큰 필요)")
                 return []
@@ -291,70 +268,60 @@ class GitHubRepositoryConfig:
             print(f"[GitHub API] 오류: {str(e)}")
             return []
 
-    def _fetch_branches_via_git(self) -> list:
-        """git 명령어를 통한 브랜치 조회 (최근 커밋순 정렬)"""
+    def _resolve_git_dir(self, repo_path: str) -> str:
+        """.git 디렉터리 또는 gitdir 파일을 해석"""
+        git_path = os.path.join(repo_path, ".git")
+        if os.path.isdir(git_path):
+            return git_path
+        if os.path.isfile(git_path):
+            try:
+                with open(git_path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read().strip()
+                if content.startswith("gitdir:"):
+                    rel_path = content.replace("gitdir:", "").strip()
+                    resolved = os.path.abspath(os.path.join(repo_path, rel_path))
+                    return resolved
+            except Exception:
+                return ""
+        return ""
+
+    def _read_origin_url(self, git_dir: str) -> str:
+        """.git/config에서 origin URL 추출"""
+        config_path = os.path.join(git_dir, "config")
+        if not os.path.isfile(config_path):
+            return ""
+
+        current_section = ""
         try:
-            branches_with_date = []
-            
-            # 로컬 저장소인 경우
-            if self.repo_type == "local" and os.path.isdir(self.repo_path):
-                result = subprocess.run(
-                    ["git", "-C", self.repo_path, "for-each-ref", "--sort=-committerdate", "--format=%(refname:short)|%(committerdate:iso)", "refs/remotes/origin/"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                if result.returncode == 0:
-                    for line in result.stdout.split("\n"):
-                        if line.strip():
-                            parts = line.split("|")
-                            if len(parts) >= 2:
-                                branch = parts[0].replace("origin/", "")
-                                if not branch.startswith("HEAD"):
-                                    date = parts[1] if len(parts) > 1 else "0000-00-00"
-                                    branches_with_date.append({
-                                        'name': branch,
-                                        'date': date
-                                    })
-                    
-                    # 중복 제거
-                    seen = set()
-                    unique_branches = []
-                    for b in branches_with_date:
-                        if b['name'] not in seen:
-                            seen.add(b['name'])
-                            unique_branches.append(b)
-                    
-                    branches = [b['name'] for b in unique_branches]
-                    self.available_branches = sorted(list(set(branches)))
-                    return self.available_branches
-            
-            # HTTPS/SSH인 경우 - git ls-remote 사용
-            elif self.repo_type in ("https", "ssh"):
-                result = subprocess.run(
-                    ["git", "ls-remote", "--heads", self.repo_path.replace(".git", "")],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                if result.returncode == 0:
-                    branches = []
-                    for line in result.stdout.split("\n"):
-                        if line.strip():
-                            # refs/heads/branch-name
-                            parts = line.split("/")
-                            if len(parts) >= 3:
-                                branch = parts[-1]
-                                branches.append(branch)
-                    
-                    self.available_branches = sorted(list(set(branches)))
-                    return self.available_branches
-        
-        except Exception as e:
-            print(f"[git ls-remote] 오류: {str(e)}")
-            return []
-        
-        return []
+            with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if stripped.startswith("[") and stripped.endswith("]"):
+                        current_section = stripped.strip("[]").strip()
+                        continue
+                    if current_section == 'remote "origin"' and stripped.startswith("url"):
+                        _, value = stripped.split("=", 1)
+                        return value.strip()
+        except Exception:
+            return ""
+
+        return ""
+
+    def _read_head_branch(self, git_dir: str) -> str:
+        """.git/HEAD에서 현재 브랜치 추출"""
+        head_path = os.path.join(git_dir, "HEAD")
+        if not os.path.isfile(head_path):
+            return ""
+        try:
+            with open(head_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read().strip()
+            if content.startswith("ref:"):
+                ref = content.replace("ref:", "").strip()
+                if ref:
+                    return ref.split("/")[-1]
+        except Exception:
+            return ""
+        return ""
     
     def set_branch(self, branch_name: str):
         """브랜치 설정"""

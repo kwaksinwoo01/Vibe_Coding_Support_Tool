@@ -57,5 +57,5 @@ LOG_FILE = LOG_DIR / f"mcp_server_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log
 CONFIG_DIR = Path(__file__).parent / "config"
 CONFIG_DIR.mkdir(exist_ok=True)
 
-# 설정 파일 (GitHub Token 등 저장)
-CONFIG_FILE = CONFIG_DIR / "server_config.json"
+# 암호화된 설정 파일 (GitHub Token 등 저장)
+ENCRYPTED_CONFIG_FILE = CONFIG_DIR / "encrypted_config.enc"

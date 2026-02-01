@@ -55,9 +55,17 @@ def load_env_vars(config_file: Optional[Path] = None) -> dict:
         "BRANCH": os.getenv("BRANCH", "main")
     }
     
-    # JSON 설정 파일이 있으면 값 덮어쓰기
+    # 암호화된 설정만 사용 (encrypted_config.enc)
     if config_file and config_file.exists():
-        saved_config = load_config(config_file)
+        if ENCRYPTION_AVAILABLE:
+            try:
+                saved_config = load_encrypted_config(config_file.parent)
+            except Exception:
+                saved_config = {}
+        else:
+            # 암호화 미지원 환경이면 기존 환경변수만 사용
+            saved_config = {}
+
         if "github_token" in saved_config:
             env_vars["GITHUB_TOKEN"] = saved_config["github_token"]
         if "workflow_secret" in saved_config:
@@ -95,13 +103,23 @@ def save_config(config: dict, config_file: Path):
 
 def load_config(config_file: Path) -> dict:
     """설정을 JSON 파일에서 로드"""
+    config: Dict[str, Any] = {}
     try:
         if config_file.exists():
             with open(config_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                config = json.load(f)
     except Exception as e:
         print(f"설정 로드 실패: {e}")
-    return {}
+
+    if ENCRYPTION_AVAILABLE:
+        try:
+            encrypted_config = load_encrypted_config(config_file.parent)
+            if encrypted_config:
+                config.update(encrypted_config)
+        except Exception as e:
+            print(f"암호화된 설정 로드 실패: {e}")
+
+    return config
 
 
 # ============================================================================
@@ -129,13 +147,15 @@ def save_encrypted_config(config: Dict[str, Any], config_dir: Optional[Path] = N
         >>> save_encrypted_config(config)
     """
     if not ENCRYPTION_AVAILABLE:
-        print("⚠ 암호화 라이브러리를 사용할 수 없습니다.")
-        print("  설치: pip install cryptography")
-        return save_config(config, config_dir / "config.json" if config_dir else Path("config/config.json"))
+        print("⚠ 암호화 라이브러리가 필요합니다. 설치: pip install cryptography")
+        return False
     
     try:
         manager = get_encryption_manager(config_dir)
-        manager.save_config(config, sensitive_keys)
+        if sensitive_keys is None:
+            manager.save_config(config)
+        else:
+            manager.save_config(config, sensitive_keys)
         return True
     except Exception as e:
         print(f"암호화된 설정 저장 실패: {e}")

@@ -25,7 +25,7 @@ from settings.config_manager import load_config, save_config, load_env_vars
 from settings.constants import (
     AGENT_PATH, FAVICON_PATH, GITHUB_REPO_PATH, MAIN_DOCUMENT_PATH,
     DEFAULT_PORT, SERVER_HOST,
-    LOG_DIR, LOG_FILE, CONFIG_DIR, CONFIG_FILE
+    LOG_DIR, LOG_FILE, CONFIG_DIR, ENCRYPTED_CONFIG_FILE
 )
 
 # Logger setup
@@ -66,7 +66,8 @@ class TepMCP(QWidget):
     def __init__(self, config_file=None, github_repo_config=None, env_vars=None, parent=None):
         super().__init__(parent)
         # Accept configuration from parent window
-        self.config_file = config_file if config_file else CONFIG_FILE
+        # Use encrypted config file as the single source of truth
+        self.config_file = config_file if config_file else ENCRYPTED_CONFIG_FILE
         self.github_repo_config = github_repo_config if github_repo_config else GitHubRepositoryConfig()
         self.env_vars = env_vars if env_vars else load_env_vars(self.config_file)
         

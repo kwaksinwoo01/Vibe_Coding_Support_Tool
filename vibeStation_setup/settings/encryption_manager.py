@@ -37,7 +37,7 @@ class EncryptionManager:
         self.config_dir.mkdir(exist_ok=True)
         
         self.master_key_env = master_key_env
-        self.encrypted_config_file = self.config_dir / "encrypted_config.json"
+        self.encrypted_config_file = self.config_dir / "encrypted_config.enc"
         self.key_file = self.config_dir / ".key"
         self.cipher_suite = None
         
@@ -175,8 +175,10 @@ class EncryptionManager:
                 encrypted_config[key] = value
         
         try:
-            with open(self.encrypted_config_file, 'w', encoding='utf-8') as f:
-                json.dump(encrypted_config, f, indent=2, ensure_ascii=False)
+            payload = json.dumps(encrypted_config, ensure_ascii=False).encode("utf-8")
+            encrypted_payload = self.cipher_suite.encrypt(payload)
+            with open(self.encrypted_config_file, "wb") as f:
+                f.write(encrypted_payload)
             logger.info(f"✓ 암호화된 설정 저장됨: {self.encrypted_config_file}")
         except Exception as e:
             logger.error(f"설정 저장 실패: {e}")
@@ -193,12 +195,18 @@ class EncryptionManager:
             raise RuntimeError("암호화 매니저가 초기화되지 않았습니다")
         
         if not self.encrypted_config_file.exists():
+            legacy_file = self.config_dir / "encrypted_config.json"
+            if legacy_file.exists():
+                return self._load_legacy_json(legacy_file)
             logger.warning(f"설정 파일을 찾을 수 없습니다: {self.encrypted_config_file}")
             return {}
         
         try:
-            with open(self.encrypted_config_file, 'r', encoding='utf-8') as f:
-                encrypted_config = json.load(f)
+            with open(self.encrypted_config_file, "rb") as f:
+                encrypted_payload = f.read()
+
+            decrypted_payload = self.cipher_suite.decrypt(encrypted_payload)
+            encrypted_config = json.loads(decrypted_payload.decode("utf-8"))
             
             decrypted_config = {}
             
@@ -222,6 +230,30 @@ class EncryptionManager:
             return {}
         except Exception as e:
             logger.error(f"설정 로드 실패: {e}")
+            return {}
+
+    def _load_legacy_json(self, legacy_file: Path) -> Dict[str, Any]:
+        """레거시 JSON 암호화 설정 파일 로드"""
+        try:
+            with open(legacy_file, "r", encoding="utf-8") as f:
+                encrypted_config = json.load(f)
+
+            decrypted_config = {}
+            for key, value in encrypted_config.items():
+                if isinstance(value, str) and value.startswith("gAAAAAB"):
+                    try:
+                        decrypted_config[key] = self.decrypt_value(value)
+                        logger.debug(f"복호화됨: {key}")
+                    except Exception as e:
+                        logger.warning(f"{key} 복호화 실패: {e}, 원본 사용")
+                        decrypted_config[key] = value
+                else:
+                    decrypted_config[key] = value
+
+            logger.info(f"✓ 레거시 암호화 설정 로드됨: {legacy_file}")
+            return decrypted_config
+        except Exception as e:
+            logger.error(f"레거시 설정 로드 실패: {e}")
             return {}
 
 

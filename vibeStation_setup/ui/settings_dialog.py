@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 from settings.github_repository_config import GitHubRepositoryConfig
 from .dialog.github_token_dialog import GitHubTokenHelpDialog
-from settings.config_manager import load_config, save_config, load_env_vars
+from settings.config_manager import load_env_vars, save_encrypted_config, load_encrypted_config, ENCRYPTION_AVAILABLE
 
 # 환경 변수 로드
 load_dotenv()
@@ -64,9 +64,17 @@ class SettingsDialog(QDialog):
         self.load_saved_settings()
     
     def load_saved_settings(self):
-        """저장된 설정 로드"""
-        saved_config = load_config(self.config_file)
-        
+        """저장된 설정 로드 (암호화된 설정 우선)"""
+        saved_config = {}
+        # 암호화된 설정만 사용 (폴백 없음)
+        if ENCRYPTION_AVAILABLE:
+            try:
+                saved_config = load_encrypted_config(self.config_file.parent)
+            except Exception:
+                saved_config = {}
+        else:
+            saved_config = {}
+
         # GitHub Token 로드
         if "github_token" in saved_config:
             self.github_token_input.setText(saved_config["github_token"])
@@ -620,30 +628,36 @@ class SettingsDialog(QDialog):
             if not raw_url:
                 self.log("Raw URL을 생성할 수 없습니다. 저장소 설정을 확인하세요.")
         
-        # 설정 파일에 저장
-        config = load_config(self.config_file)
-        config["github_token"] = self.github_token_input.text().strip()
-        config["workflow_secret"] = self.workflow_secret_input.text().strip()
-        config["repo_path"] = repo_path
-        config["main_doc"] = main_doc
-        config["branch"] = selected_branch or self.github_repo_config.branch
-        config["docs2_filter"] = self.docs2_filter_checkbox.isChecked()
-        config["docs_filter"] = self.docs_filter_checkbox.isChecked()
-        config["keyword_filter"] = self.keyword_filter_checkbox.isChecked()
-        save_config(config, self.config_file)
-        
+        # 설정 파일에 저장 (암호화된 설정만 사용)
+        config = {
+            "github_token": self.github_token_input.text().strip(),
+            "workflow_secret": self.workflow_secret_input.text().strip(),
+            "repo_path": repo_path,
+            "main_doc": main_doc,
+            "branch": selected_branch or self.github_repo_config.branch,
+            "docs2_filter": self.docs2_filter_checkbox.isChecked(),
+            "docs_filter": self.docs_filter_checkbox.isChecked(),
+            "keyword_filter": self.keyword_filter_checkbox.isChecked()
+        }
+
+        save_encrypted_config(
+            config,
+            config_dir=self.config_file.parent,
+            sensitive_keys=["github_token", "workflow_secret"]
+        )
+
         # 전역 변수 업데이트
         global GITHUB_REPO_PATH, MAIN_DOCUMENT_PATH
         GITHUB_REPO_PATH = repo_path
         MAIN_DOCUMENT_PATH = main_doc
         
-        self.log(f"✓ GitHub 설정 저장됨")
+        self.log(f"✓ GitHub 설정 저장됨 (암호화된 설정에 저장됨)")
         self.log(f"  저장소: {repo_path}")
         self.log(f"  브랜치: {selected_branch or self.github_repo_config.branch}")
         self.log(f"  메인 문서: {main_doc}")
         if raw_url:
             self.log(f"  Raw GitHub URL: {raw_url}")
-        self.log(f"  저장 위치: {self.config_file}")
+        self.log(f"  저장 위치 (암호화 파일): {self.config_file.parent / 'encrypted_config.enc'}")
     
     
     def apply_env_vars(self):
@@ -656,14 +670,20 @@ class SettingsDialog(QDialog):
         os.environ["GITHUB_TOKEN"] = self.env_vars["GITHUB_TOKEN"]
         os.environ["WORKFLOW_SHARED_SECRET"] = self.env_vars["WORKFLOW_SHARED_SECRET"]
         
-        # 설정 파일에 저장
-        config = load_config(self.config_file)
-        config["github_token"] = self.env_vars["GITHUB_TOKEN"]
-        config["workflow_secret"] = self.env_vars["WORKFLOW_SHARED_SECRET"]
-        save_config(config, self.config_file)
-        
-        self.log("✓ 환경 변수 적용 및 저장됨")
-        self.log(f"  저장 위치: {self.config_file}")
+        # 설정 파일에 저장 (암호화된 설정에만 저장)
+        config = {
+            "github_token": self.env_vars["GITHUB_TOKEN"],
+            "workflow_secret": self.env_vars["WORKFLOW_SHARED_SECRET"]
+        }
+
+        save_encrypted_config(
+            config,
+            config_dir=self.config_file.parent,
+            sensitive_keys=["github_token", "workflow_secret"]
+        )
+
+        self.log("✓ 환경 변수 적용 및 저장됨 (암호화된 설정에만 저장됨)")
+        self.log(f"  저장 위치 (암호화 파일): {self.config_file.parent / 'encrypted_config.enc'}")
         
         # GitHub Token을 github_repo_config에도 적용
         if self.env_vars["GITHUB_TOKEN"]:
