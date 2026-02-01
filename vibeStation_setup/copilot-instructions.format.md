@@ -18,7 +18,6 @@ description: {{PROJECT_DESCRIPTION}}
 ## 🔧 system constant
 
 {Main_Planning_document} = {{path_to_main_planning_document}}
-{Domain_Service_Base_URL} = https://ersteqwep-1069338123299.europe-west1.run.app
 {Domain_Service_Auth_Header} = X-Workflow-Token
 {Domain_Service_Auth_Token} = WORKFLOW_SHARED_SECRET
 

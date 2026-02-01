@@ -13,9 +13,8 @@ current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
 from yaml_handler import YAMLHandler
-from main_window import MainWindow
 import yaml
-
+from ui.main_window import MainWindow
 
 class VibeStationSetupApp:
     """Setup application class for copilot-instructions management."""
