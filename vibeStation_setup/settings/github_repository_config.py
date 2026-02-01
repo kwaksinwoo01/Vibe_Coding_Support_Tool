@@ -204,7 +204,11 @@ class GitHubRepositoryConfig:
             
             # GitHub Token이 있으면 추가 (API 제한 증가: 60 → 5000)
             if self.github_token:
+                token_display = f"{self.github_token[:10]}...{self.github_token[-5:]}" if len(self.github_token) > 15 else "***"
+                print(f"[GitHub API] Token 인증 시도: {token_display}")
                 request.add_header('Authorization', f'token {self.github_token}')
+            else:
+                print(f"[GitHub API] ⚠ Token 없음 - API 제한: 60/시간")
             
             with urllib.request.urlopen(request, timeout=10) as response:
                 branches_data = json.loads(response.read().decode('utf-8'))
@@ -247,16 +251,23 @@ class GitHubRepositoryConfig:
                     detail = e.read().decode("utf-8")
                 except Exception:
                     detail = ""
-                token_hint = "있음" if self.github_token else "없음"
-                print(f"[GitHub API] 401 Unauthorized - 토큰 인증 실패 (토큰: {token_hint})")
+                token_status = "있음 (값이 유효하지 않을 수 있음)" if self.github_token else "없음"
+                print(f"[GitHub API] ❌ 401 Unauthorized - 토큰 인증 실패 (토큰: {token_status})")
+                print(f"[GitHub API] 요청 URL: https://api.github.com/repos/{self.owner}/{self.repo_name}/branches")
                 if detail:
                     print(f"[GitHub API] 상세 응답: {detail}")
+                print(f"[GitHub API] ➜ 해결책:")
+                print(f"     1. Token이 올바른지 확인: https://github.com/settings/tokens")
+                print(f"     2. Token 권한 확인: 'repo' 또는 'public_repo' 스코프 필요")
+                print(f"     3. Token이 만료되었을 수 있음")
+                print(f"     4. Token 값이 완전히 복사되었는지 확인 (공백 제거)")
                 return []
             if e.code == 403:
                 print(f"[GitHub API] 403 Forbidden - API 제한 초과 (인증 토큰 필요)")
                 return []
             elif e.code == 404:
                 print(f"[GitHub API] 404 Not Found - 저장소를 찾을 수 없음")
+                print(f"[GitHub API] 저장소: {self.owner}/{self.repo_name}")
                 return []
             else:
                 print(f"[GitHub API] HTTP 오류: {e.code}")
@@ -323,8 +334,52 @@ class GitHubRepositoryConfig:
             return ""
         return ""
     
-    def set_branch(self, branch_name: str):
+    def validate_token(self) -> bool:
+        """GitHub Token 유효성 검사"""
+        if not self.github_token:
+            print("[Token 검증] ⚠ Token이 설정되지 않았습니다.")
+            return False
+        
+        try:
+            import urllib.request
+            import urllib.error
+            import json
+            
+            # GitHub API의 authenticated user endpoint 호출
+            url = "https://api.github.com/user"
+            request = urllib.request.Request(url)
+            request.add_header('User-Agent', 'Mozilla/5.0')
+            request.add_header('Authorization', f'token {self.github_token}')
+            
+            with urllib.request.urlopen(request, timeout=5) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                login = data.get('login', 'Unknown')
+                print(f"[Token 검증] ✓ Token 유효함! (로그인: {login})")
+                return True
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                print(f"[Token 검증] ❌ Token 인증 실패 (401 Unauthorized)")
+                print(f"[Token 검증]    Token이 유효하지 않거나 만료되었을 수 있습니다.")
+                print(f"[Token 검증]    확인: https://github.com/settings/tokens")
+            else:
+                print(f"[Token 검증] ❌ HTTP 오류: {e.code}")
+            return False
+        except Exception as e:
+            print(f"[Token 검증] ❌ 오류: {str(e)}")
+            return False
+    
+    def set_and_validate_token(self, token: str) -> bool:
+        """Token 설정 및 유효성 검사"""
+        if not token or not token.strip():
+            print("[Token] ⚠ Token이 비어있습니다.")
+            return False
+        
+        self.github_token = token.strip()
+        print(f"[Token] Token 설정됨 (길이: {len(self.github_token)})")
+        return self.validate_token()
+
+    def set_branch(self, branch_name: str) -> bool:
         """브랜치 설정"""
-        if branch_name:
-            self.branch = branch_name
+        if branch_name and branch_name.strip():
+            self.branch = branch_name.strip()
         return True

@@ -305,9 +305,26 @@ class SettingsDialog(QDialog):
             self.log("  Token 입력 후 다시 시도하세요.")
             return
 
+        # Token 검증 및 저장
+        self.log(f"[Token 검증] 입력된 Token 길이: {len(token)} 자")
+        self.log(f"[Token 검증] Token 앞 3글자: {token[:3] if len(token) >= 3 else '***'}")
+        self.log(f"[Token 검증] Token 뒤 3글자: {token[-3:] if len(token) >= 3 else '***'}")
+        
         # GitHub Token 설정 (저장소 연결 전 필수)
         self.github_repo_config.github_token = token
         self.log("[GitHub] Token 인증 활성화됨")
+        self.log(f"[GitHub] github_repo_config.github_token 설정됨: {bool(self.github_repo_config.github_token)}")
+        
+        # Token 유효성 검사
+        self.log("[GitHub] Token 유효성 검사 중...")
+        is_valid = self.github_repo_config.validate_token()
+        if not is_valid:
+            self.log("❌ Token 검증 실패! 다음을 확인하세요:")
+            self.log("   1. Token이 올바르게 복사되었는지 확인")
+            self.log("   2. Token이 만료되지 않았는지 확인 (https://github.com/settings/tokens)")
+            self.log("   3. Token의 권한: 'repo' 또는 'public_repo' 스코프 필요")
+            self.log("   4. 공백이 포함되어 있지 않은지 확인")
+            return
         
         self.log(f"[GitHub] 저장소 연결 시도: {repo_path}")
         
@@ -323,13 +340,12 @@ class SettingsDialog(QDialog):
             
             # 브랜치 목록 조회
             self.log("[GitHub] 활성 브랜치 조회 중...")
-            self.log("  방법 1: GitHub API 시도...")
+            self.log("  GitHub API 호출 (token 포함)...")
             branches = self.github_repo_config.fetch_available_branches(use_git=False)
             
             if not branches:
-                self.log("  GitHub API 실패 - 대체 방법 시도")
-                self.log("  방법 2: git ls-remote 명령어 시도...")
-                branches = self.github_repo_config.fetch_available_branches(use_git=True)
+                self.log("  ❌ GitHub API 실패 - Token/권한을 확인하세요:")
+                self.log("  GitHub API만 사용합니다. (git 명령 사용 안 함)")
             
             if branches:
                 # 최근 5개만 표시
@@ -365,14 +381,14 @@ class SettingsDialog(QDialog):
                 self.log("⚠ 경고: 브랜치를 조회할 수 없습니다")
                 self.log("  해결책:")
                 self.log("  1. GitHub Token을 입력하세요")
-                self.log("  2. 또는 git을 설치하고 PATH에 추가하세요")
-                self.log("  3. 또는 로컬 저장소 경로로 변경하세요")
+                self.log("  2. Token 스코프를 확인하세요: repo 또는 public_repo")
+                self.log("  3. 저장소 경로가 정확한지 확인하세요")
                 self.log("  임시 해결: 브랜치를 수동으로 입력할 수 있습니다")
                 
                 # 수동 입력 활성화
                 self.branch_combo.setEnabled(True)
                 self.branch_combo.setEditable(True)
-                self.branch_combo.lineEdit().setText("main")
+                self.branch_combo.setCurrentText("main")
         else:
             self.log("✗ GitHub 저장소 연결 실패. 경로 형식을 확인하세요.")
             self.repo_info_label.setText("저장소: 연결 실패")
@@ -676,6 +692,9 @@ class SettingsDialog(QDialog):
             "workflow_secret": self.env_vars["WORKFLOW_SHARED_SECRET"]
         }
 
+        self.log(f"[저장 전 검증] github_token 길이: {len(config['github_token'])} 자")
+        self.log(f"[저장 전 검증] github_token 앞 3글자: {config['github_token'][:3] if len(config['github_token']) >= 3 else '***'}")
+
         save_encrypted_config(
             config,
             config_dir=self.config_file.parent,
@@ -684,6 +703,18 @@ class SettingsDialog(QDialog):
 
         self.log("✓ 환경 변수 적용 및 저장됨 (암호화된 설정에만 저장됨)")
         self.log(f"  저장 위치 (암호화 파일): {self.config_file.parent / 'encrypted_config.enc'}")
+        
+        # 저장 후 다시 로드하여 검증
+        try:
+            loaded_config = load_encrypted_config(self.config_file.parent)
+            if "github_token" in loaded_config:
+                loaded_token = loaded_config["github_token"]
+                self.log(f"[저장 후 검증] 로드된 token 길이: {len(loaded_token)} 자")
+                self.log(f"[저장 후 검증] 로드된 token 일치: {loaded_token == self.env_vars['GITHUB_TOKEN']}")
+            else:
+                self.log("[저장 후 검증] ⚠ 로드된 설정에 github_token이 없습니다!")
+        except Exception as e:
+            self.log(f"[저장 후 검증] 오류: {str(e)}")
         
         # GitHub Token을 github_repo_config에도 적용
         if self.env_vars["GITHUB_TOKEN"]:
@@ -697,6 +728,12 @@ class SettingsDialog(QDialog):
         if hasattr(self, "settings_log_viewer") and self.settings_log_viewer is not None:
             self.settings_log_viewer.append(message)
         self.parent_app.log(message)
+
+    def set_branch(self, branch_name: str):
+        """브랜치 설정"""
+        if branch_name:
+            self.branch = branch_name
+        return True
 
 __all__ = [
 "SettingsDialog",

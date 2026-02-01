@@ -33,7 +33,7 @@ class EncryptionManager:
             config_dir: 설정 파일 디렉토리
             master_key_env: 마스터 키가 저장된 환경 변수명
         """
-        self.config_dir = config_dir or Path(__file__).parent / "../config"
+        self.config_dir = (config_dir or Path(__file__).parent / "../config").resolve()
         self.config_dir.mkdir(exist_ok=True)
         
         self.master_key_env = master_key_env
@@ -139,7 +139,7 @@ class EncryptionManager:
             logger.error(f"복호화 실패: {e}")
             raise
     
-    def save_config(self, config: Dict[str, Any], sensitive_keys: list = None):
+    def save_config(self, config: Dict[str, Any], sensitive_keys: Optional[list] = None):
         """
         설정을 암호화하여 저장
         
@@ -177,8 +177,12 @@ class EncryptionManager:
         try:
             payload = json.dumps(encrypted_config, ensure_ascii=False).encode("utf-8")
             encrypted_payload = self.cipher_suite.encrypt(payload)
-            with open(self.encrypted_config_file, "wb") as f:
+            tmp_path = self.encrypted_config_file.with_suffix(self.encrypted_config_file.suffix + ".tmp")
+            with open(tmp_path, "wb") as f:
                 f.write(encrypted_payload)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self.encrypted_config_file)
             logger.info(f"✓ 암호화된 설정 저장됨: {self.encrypted_config_file}")
         except Exception as e:
             logger.error(f"설정 저장 실패: {e}")
@@ -217,8 +221,8 @@ class EncryptionManager:
                         decrypted_config[key] = self.decrypt_value(value)
                         logger.debug(f"복호화됨: {key}")
                     except Exception as e:
-                        logger.warning(f"{key} 복호화 실패: {e}, 원본 사용")
-                        decrypted_config[key] = value
+                        logger.warning(f"{key} 복호화 실패: {e}, 값 초기화")
+                        decrypted_config[key] = ""
                 else:
                     decrypted_config[key] = value
             
@@ -266,10 +270,20 @@ def get_encryption_manager(config_dir: Optional[Path] = None) -> EncryptionManag
     global _encryption_manager
     if _encryption_manager is None:
         _encryption_manager = EncryptionManager(config_dir)
+        return _encryption_manager
+
+    if config_dir is not None:
+        try:
+            resolved = Path(config_dir).resolve()
+            if _encryption_manager.config_dir.resolve() != resolved:
+                _encryption_manager = EncryptionManager(config_dir)
+        except Exception:
+            _encryption_manager = EncryptionManager(config_dir)
+
     return _encryption_manager
 
 
-def save_encrypted_config(config: Dict[str, Any], sensitive_keys: list = None):
+def save_encrypted_config(config: Dict[str, Any], sensitive_keys: Optional[list] = None):
     """설정을 암호화하여 저장 (편의 함수)"""
     manager = get_encryption_manager()
     manager.save_config(config, sensitive_keys)

@@ -40,8 +40,8 @@ from datetime import datetime
 from queue import Queue
 from threading import Lock
 
-from models.core import AgentState, TaskContext
-from lang_graph_moduel.decision_engine import (
+from .models.core import AgentState, TaskContext
+from .lang_graph_moduel.decision_engine import (
     DecisionEngine,
     DecisionContext,
     RoutingDecision,
@@ -49,18 +49,18 @@ from lang_graph_moduel.decision_engine import (
     create_decision_context,
     ConfidenceLevel,
 )
-from lang_graph_moduel.policy_engine import PolicyEngine
-from lang_graph_moduel.metrics_collector import get_metrics_collector, MetricsCollector
+from .lang_graph_moduel.policy_engine import PolicyEngine
+from .lang_graph_moduel.metrics_collector import get_metrics_collector, MetricsCollector
 
-from models.core.reporting_models import (
+from .models.core.reporting_models import (
     IssueClassification,
     ResolutionStrategy,
     RoutingInfo,
 )
-from common.github_reporter import get_github_reporter
+from .common.github_reporter import get_github_reporter
 
 # Import routing engine (extracted from inner classes)
-from core.routing_engine import (
+from .core.routing_engine import (
     RoutingEngine,
     IRoutingStrategy,
     KeywordRoutingStrategy,

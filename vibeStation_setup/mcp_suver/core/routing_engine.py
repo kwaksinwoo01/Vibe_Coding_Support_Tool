@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 # Import data models
-from models.core.reporting_models import (
+from ..models.core.reporting_models import (
     IssueClassification,
     ResolutionStrategy,
     RoutingInfo,
