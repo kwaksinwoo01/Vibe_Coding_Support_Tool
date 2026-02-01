@@ -30,12 +30,12 @@ The database storage method of MCP files is highly compatible and a method suita
 
 ## 🔧 Required Setup
 
-1. 작업 보고서는 "docs/ip" 폴더에 저장하기로 합니다.
-2. 작업 계획은 "docs/wp" 폴더에 저장하기로 합니다.
-3. 이외 의 경로에 문서 생성을 금지합니다.
-
-
-
+1. Decide to save the work report in the “docs/ip” folder.
+2. Decide to save the work plan in the “docs/wp” folder.
+3. Document creation in any other path is prohibited.
+4. Supports the ability to automatically create, modify, execute and document work plans in the MCP Local Server Execution tab.
+5. Cloud method is not supported.
+---
 
 ## 🧪 Testing Requirements
 
