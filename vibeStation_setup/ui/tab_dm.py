@@ -497,14 +497,28 @@ pip install -r requirements.txt
 4. Deploy initial version"""
 
 
-class TepDM(QMainWindow):
-    """Main application window."""
+class TepDM(QWidget):
+    """Document Management Tab (QWidget)
     
-    def __init__(self, api_server, yaml_handler, config):
-        super().__init__()
-        self.api_server = api_server
-        self.yaml_handler = yaml_handler
-        self.config = config
+    이 클래스는 MainWindow의 탭으로 사용됩니다.
+    GitHub Copilot Instructions 파일 관리를 담당합니다.
+    """
+    
+    # Signals for parent window communication
+    instructions_saved = pyqtSignal(str)  # file path
+    status_changed = pyqtSignal(str)
+    
+    def __init__(self, config_file=None, github_repo_config=None, env_vars=None, parent=None):
+        super().__init__(parent)
+        # Accept configuration from parent window
+        self.config_file = config_file
+        self.github_repo_config = github_repo_config
+        self.env_vars = env_vars
+        
+        # For compatibility with existing code - these may be None
+        self.api_server = None
+        self.yaml_handler = None  # Will be created if needed
+        self.config = {}
         
         # Initialize UI first, then check for existing copilot-instructions.md
         self.init_ui()
@@ -670,15 +684,11 @@ class TepDM(QMainWindow):
         self.create_ui_programmatically()
     
     def create_ui_programmatically(self):
-        """Create UI with integrated components."""
-        self.setWindowTitle("vibeStation Setup - GitHub Copilot Instructions Manager")
-        self.setGeometry(100, 100, 1200, 800)
-
-        # Central widget
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-
-        layout = QVBoxLayout(central_widget)
+        """Create UI with integrated components - Tab content only"""
+        # NO window-level calls: setWindowTitle, setGeometry removed
+        # Tab widgets use setLayout() not setCentralWidget()
+        
+        layout = QVBoxLayout(self)
 
         # Header
         header = QLabel("vibeStation Setup - GitHub Copilot Instructions Manager")
@@ -780,20 +790,8 @@ curl -X POST http://127.0.0.1:8765/stream \\
         return widget
     
 
-    def closeEvent(self, event):
-        """Handle window close event."""
-        reply = QMessageBox.question(
-            self,
-            'Exit',
-            'Are you sure you want to exit vibeStation?',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            event.accept()
-        else:
-            event.ignore()
+    # closeEvent removed - window lifecycle managed by MainWindow
+    # Tab widgets should not handle window close events
     
     def generate_instructions_file(self, setup_data):
         """Generate .github/copilot-instructions.md from template."""
