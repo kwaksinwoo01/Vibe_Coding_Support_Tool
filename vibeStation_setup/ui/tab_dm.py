@@ -16,11 +16,10 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QMainWindow, QMessageBox, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QLabel, QPushButton, QFileDialog, QSplitter, QLineEdit, QComboBox,
-    QScrollArea, QGroupBox, QFormLayout, QDialog, QDialogButtonBox, QApplication,
-    
-    )
+    QScrollArea, QGroupBox, QFormLayout, QDialog, QDialogButtonBox, QApplication
+)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QEvent
-from PyQt6.QtGui import QFont, QIcon, 
+from PyQt6.QtGui import QFont, QIcon 
 
 
 class InstructionsEditorWidget(QWidget):
