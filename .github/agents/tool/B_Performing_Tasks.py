@@ -472,7 +472,7 @@ class TaskExecutionEngine:
 
 **Document Type**: PRD (Product Requirements Document)  
 **Generated**: {datetime.now(timezone.utc).isoformat()}  
-**Status**: {"✅ COMPLETED" if failed == 0 else "⚠️ PARTIALLY COMPLETED" if completed > 0 else "❌ FAILED"}  
+**Status**: {"✅ COMPLETED" if failed == 0 else "⚠️ PARTIALLY COMPLETED" if completed > 0 else "FAILED"}  
 **WPD Source**: `{wpd_source_path}`
 
 ---
@@ -529,7 +529,7 @@ This document reports the execution results of work plan P{Part_N}. The plan con
             if result.get('checklist_results'):
                 prd_content += f"\n**Checklist Items** ({len(result['checklist_results'])} items):\n"
                 for item in result['checklist_results']:
-                    status_icon = "✓" if item.get('status') == 'COMPLETED' else "✗"
+                    status_icon = "[OK]" if item.get('status') == 'COMPLETED' else "[ERROR]"
                     prd_content += f"- {status_icon} {item['text']}\n"
             
             # Subphase results (for L2/L3 hierarchical execution)
@@ -547,7 +547,7 @@ This document reports the execution results of work plan P{Part_N}. The plan con
             if result['errors']:
                 prd_content += f"\n**Errors**:\n"
                 for error in result['errors']:
-                    prd_content += f"- ❌ {error}\n"
+                    prd_content += f"- {error}\n"
             
             prd_content += "\n---\n\n"
         
@@ -570,7 +570,7 @@ This document reports the execution results of work plan P{Part_N}. The plan con
 
 ## ✅ Completion Status
 
-**Overall Status**: {"✅ All phases completed successfully" if failed == 0 and in_progress == 0 else "⚠️ Some phases incomplete or failed" if completed > 0 else "❌ Execution failed"}
+**Overall Status**: {"✅ All phases completed successfully" if failed == 0 and in_progress == 0 else "⚠️ Some phases incomplete or failed" if completed > 0 else "Execution failed"}
 
 **Next Steps**:
 - Review failed phases (if any) and retry or modify plan

@@ -16,7 +16,7 @@ New Features (v2.1):
 - Decision trace recording
 
 Workflow:
-1. User Input → Classification (via Tier F or keyword matching)
+1. User Input -> Classification (via Tier F or keyword matching)
 2. Decision evaluation (confidence, policies, cost)
 3. Tier execution with retry logic
 4. Circuit breaker check and failure handling
@@ -35,13 +35,10 @@ import json
 import time
 import warnings
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
-from collections import defaultdict
 from queue import Queue
 from threading import Lock
-from abc import ABC, abstractmethod
-import requests
 
 from models.core import AgentState, TaskContext
 from lang_graph_moduel.decision_engine import (
@@ -54,13 +51,21 @@ from lang_graph_moduel.decision_engine import (
 )
 from lang_graph_moduel.policy_engine import PolicyEngine
 from lang_graph_moduel.metrics_collector import get_metrics_collector, MetricsCollector
-from models.core.types import EventType
 
-# Import Tier D analysis data models for routing engine integration
 from models.core.reporting_models import (
     IssueClassification,
     ResolutionStrategy,
     RoutingInfo,
+)
+from common.github_reporter import get_github_reporter
+
+# Import routing engine (extracted from inner classes)
+from core.routing_engine import (
+    RoutingEngine,
+    IRoutingStrategy,
+    KeywordRoutingStrategy,
+    MetricsBasedRoutingStrategy,
+    RoutingValidator,
 )
 
 # Redis import with fallback
@@ -201,6 +206,7 @@ class HumanDecisionQueue:
         self.queue: Queue = Queue()
         self.pending_decisions: Dict[str, DecisionContext] = {}
         self._lock = Lock()
+        self.on_resolve = None
 
     def enqueue(self, decision_id: str, context: DecisionContext):
         """Add a decision to the queue"""
@@ -210,19 +216,60 @@ class HumanDecisionQueue:
             print(f"[HUMAN_QUEUE] Enqueued decision {decision_id}")
 
     def dequeue(self) -> Optional[str]:
-        """Get next decision from queue (non-blocking)"""
-        try:
-            decision_id = self.queue.get_nowait()
-            return decision_id
-        except:
-            return None
+        """Get next decision from queue (non-blocking), skipping resolved entries"""
+        while True:
+            try:
+                decision_id = self.queue.get_nowait()
+            except:
+                return None
 
-    def resolve(self, decision_id: str, decision_data: Dict[str, Any]):
-        """Mark a decision as resolved"""
+            with self._lock:
+                # If still pending, return it; otherwise skip stale id
+                if decision_id in self.pending_decisions:
+                    return decision_id
+                else:
+                    # stale/already resolved - continue to next
+                    continue
+
+    def resolve(self, decision_id: str, decision_data: Dict[str, Any]) -> bool:
+        """
+        Mark a decision as resolved.
+
+        Behavior:
+        - Attach decision_data into the DecisionContext.metadata['human_decision']
+        - Add resolved timestamp and optional audit info
+        - Remove from pending_decisions
+        - Call on_resolve(decision_id, context) if callback provided
+        - Return True if resolved, False if not found
+        """
         with self._lock:
-            if decision_id in self.pending_decisions:
-                del self.pending_decisions[decision_id]
-                print(f"[HUMAN_QUEUE] Resolved decision {decision_id}")
+            ctx = self.pending_decisions.get(decision_id)
+            if not ctx:
+                print(f"[HUMAN_QUEUE] Resolve requested for unknown decision {decision_id}")
+                return False
+
+            # Ensure metadata exists
+            meta = getattr(ctx, "metadata", None)
+            if meta is None:
+                ctx.metadata = {}
+
+            ctx.metadata["human_decision"] = decision_data
+            ctx.metadata["resolved_at"] = datetime.now().isoformat()
+            # Optionally store who resolved it, reason, etc.
+            ctx.metadata["resolved_by"] = decision_data.get("user", decision_data.get("resolved_by", "human_api"))
+
+            # Remove from pending list
+            del self.pending_decisions[decision_id]
+            print(f"[HUMAN_QUEUE] Resolved decision {decision_id}")
+
+        # Call callback outside lock to avoid deadlocks
+        if callable(self.on_resolve):
+            try:
+                self.on_resolve(decision_id, ctx)
+            except Exception as e:
+                print(f"[HUMAN_QUEUE] on_resolve callback failed for {decision_id}: {e}")
+
+        return True
 
     def is_pending(self, decision_id: str) -> bool:
         """Check if a decision is still pending"""
@@ -293,6 +340,9 @@ class MainAgent:
         self.workspace_root = workspace_root
         self.execution_history: List[Dict[str, Any]] = []
         self.current_session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Multi-tier routing: Store alternative tiers with valid confidence
+        self._alternative_tiers: List[Tuple[str, float]] = []
 
         # Redis client for circuit breaker persistence
         self.redis_client = None
@@ -350,882 +400,35 @@ class MainAgent:
         self.awaiting_decision: bool = False
         self.pending_decision_context: Optional[DecisionContext] = None
         self.human_decision_queue = HumanDecisionQueue()
+        # Register callback to be invoked when a human decision is resolved
+        self.human_decision_queue.on_resolve = self._on_human_decision_resolved
         self.human_retry_max_cycles: int = 2  # Max retry cycles before async wait
 
         # Routing engine (integrated from routing_engine.py for centralized orchestration)
-        self.routing_engine = self.RoutingEngine(self)
-    
+        self.routing_engine = RoutingEngine(
+            workspace_root=workspace_root,
+            metrics_collector=self.metrics,
+            github_reporter=get_github_reporter(),
+            enable_metrics=enable_metrics,
+            execution_history=self.execution_history,
+        )
+
+    def shutdown(self):
+        """Shutdown the agent and cleanup resources"""
+        print("[MAIN_AGENT] Shutting down...")
+        if self.redis_client:
+            try:
+                self.redis_client.close()
+                print("[MAIN_AGENT] Redis connection closed")
+            except Exception as e:
+                print(f"[MAIN_AGENT] Error closing Redis: {e}")
+        print("[MAIN_AGENT] Shutdown complete")
+
     # ========================================================================
     # Routing Strategy Interface and Implementations
     # ========================================================================
     
-    class IRoutingStrategy(ABC):
-        """
-        Interface for routing strategies.
-        
-        Defines the contract for different routing decision approaches:
-        - KeywordRoutingStrategy: Traditional keyword/rule-based routing
-        - MetricsBasedRoutingStrategy: Metrics-driven dynamic routing
-        """
-        
-        from abc import ABC, abstractmethod
-        
-        @abstractmethod
-        def decide_routing(
-            self,
-            tier: str,
-            result: Dict[str, Any],
-            execution_history: List[Dict[str, Any]],
-            metrics_collector: Optional['MetricsCollector']
-        ) -> str:
-            """
-            Decide next tier based on current tier result.
-            
-            Args:
-                tier: Current tier (A-F)
-                result: Tier execution result
-                execution_history: Historical execution data
-                metrics_collector: Metrics collector for pattern analysis
-                
-            Returns:
-                Next tier to route to (or None to end)
-            """
-            pass
-        
-        @abstractmethod
-        def calculate_confidence_threshold(
-            self,
-            metrics_collector: Optional['MetricsCollector']
-        ) -> float:
-            """
-            Calculate dynamic confidence threshold based on strategy.
-            
-            Args:
-                metrics_collector: Metrics collector for analysis
-                
-            Returns:
-                Recommended confidence threshold (0.0-1.0)
-            """
-            pass
-    
-    class KeywordRoutingStrategy(IRoutingStrategy):
-        """
-        Traditional keyword and rule-based routing strategy.
-        
-        Uses predefined rules from TIER_D_ROUTING_RULES and VALID_NEXT_ROUTINGS.
-        This is the existing routing logic, now encapsulated as a strategy.
-        """
-        
-        def __init__(self, routing_engine: 'MainAgent.RoutingEngine'):
-            """Initialize with reference to RoutingEngine for accessing rules."""
-            self.routing_engine = routing_engine
-        
-        def decide_routing(
-            self,
-            tier: str,
-            result: Dict[str, Any],
-            execution_history: List[Dict[str, Any]],
-            metrics_collector: Optional['MetricsCollector']
-        ) -> str:
-            """Apply traditional keyword-based routing rules."""
-            status = result.get("status", "UNKNOWN")
-            
-            if tier == "D":
-                # Use existing routing engine for Tier D
-                return result.get("next_node", "F")
-            
-            elif tier == "C":
-                # Tier C routing rules
-                return self.routing_engine._apply_routing_rules_for_c(result)
-            
-            elif tier == "E":
-                # Tier E routing rules
-                return self.routing_engine._apply_routing_rules_for_e(result)
-            
-            else:
-                # Default: use next_node from result
-                return result.get("next_node")
-        
-        def calculate_confidence_threshold(
-            self,
-            metrics_collector: Optional['MetricsCollector']
-        ) -> float:
-            """Return static threshold for keyword-based routing."""
-            return 0.7  # Traditional static threshold
-    
-    class MetricsBasedRoutingStrategy(IRoutingStrategy):
-        """
-        Metrics-driven routing strategy.
-        
-        Analyzes historical execution patterns and success rates to make
-        intelligent routing decisions. Adjusts confidence thresholds dynamically
-        based on recent performance.
-        """
-        
-        def __init__(self, routing_engine: 'MainAgent.RoutingEngine'):
-            """Initialize with reference to RoutingEngine."""
-            self.routing_engine = routing_engine
-            self.fallback_strategy = None  # Will be set to KeywordRoutingStrategy
-        
-        def decide_routing(
-            self,
-            tier: str,
-            result: Dict[str, Any],
-            execution_history: List[Dict[str, Any]],
-            metrics_collector: Optional['MetricsCollector']
-        ) -> str:
-            """
-            Apply metrics-based routing with intelligent fallback patterns.
-            
-            Analyzes execution history to identify:
-            1. Frequent failure patterns (e.g., A→D repeatedly)
-            2. Successful routing paths (e.g., D→C→B success rate)
-            3. Tier-specific performance trends
-            """
-            if not metrics_collector:
-                # No metrics available, fallback to keyword strategy
-                if self.fallback_strategy:
-                    return self.fallback_strategy.decide_routing(
-                        tier, result, execution_history, metrics_collector
-                    )
-                return result.get("next_node")
-            
-            # Analyze recent patterns
-            patterns = metrics_collector.analyze_patterns(tier=tier, limit=50)
-            
-            status = result.get("status", "UNKNOWN")
-            
-            # Rule 1: If tier has high failure rate (>50%), route to D for analysis
-            if tier in patterns["tier_failure_rates"]:
-                failure_rate = patterns["tier_failure_rates"][tier]
-                if failure_rate > 0.5 and status == "SUCCESS":
-                    print(f"[METRICS_ROUTING] Tier {tier} has high failure rate ({failure_rate:.2f}), "
-                          f"recommending preemptive analysis via D")
-                    # Don't override SUCCESS status, but log the pattern
-            
-            # Rule 2: Learn from common failure patterns
-            if status != "SUCCESS":
-                # Check if this failure pattern has occurred before
-                common_failures = patterns["common_failure_patterns"]
-                if len(common_failures) > 0:
-                    # If we've seen this failure pattern recently, route to D
-                    similar_failures = [f for f in common_failures if f["tier"] == tier]
-                    if len(similar_failures) >= 2:
-                        print(f"[METRICS_ROUTING] Detected repeated failure pattern for Tier {tier}, "
-                              f"routing to D for analysis")
-                        return "D"
-            
-            # Rule 3: Optimize successful paths
-            # If tier has high success rate (>80%), trust its next_node recommendation
-            if tier in patterns["tier_success_rates"]:
-                success_rate = patterns["tier_success_rates"][tier]
-                if success_rate > 0.8 and status == "SUCCESS":
-                    next_node = result.get("next_node")
-                    print(f"[METRICS_ROUTING] Tier {tier} has high success rate ({success_rate:.2f}), "
-                          f"trusting its recommendation: {next_node}")
-                    return next_node
-            
-            # Rule 4: Predictive routing based on execution history
-            # Look at last 5 executions to predict next tier
-            if len(execution_history) >= 5:
-                recent_executions = execution_history[-5:]
-                # Count most common next_tier transitions from current tier
-                next_tier_counts = {}
-                for exec_entry in recent_executions:
-                    if exec_entry.get("tier") == tier and exec_entry.get("status") == "SUCCESS":
-                        next_tier = exec_entry.get("next_node")
-                        if next_tier:
-                            next_tier_counts[next_tier] = next_tier_counts.get(next_tier, 0) + 1
-                
-                if next_tier_counts:
-                    # Use most common successful transition
-                    predicted_next = max(next_tier_counts, key=next_tier_counts.get)
-                    current_next = result.get("next_node")
-                    if predicted_next != current_next and status == "SUCCESS":
-                        print(f"[METRICS_ROUTING] Historical pattern suggests {tier}→{predicted_next} "
-                              f"instead of {tier}→{current_next} (based on {next_tier_counts[predicted_next]} occurrences)")
-                        # Don't override, but log for learning
-            
-            # Fallback to keyword strategy if no metrics-based decision made
-            if self.fallback_strategy:
-                return self.fallback_strategy.decide_routing(
-                    tier, result, execution_history, metrics_collector
-                )
-            
-            return result.get("next_node")
-        
-        def calculate_confidence_threshold(
-            self,
-            metrics_collector: Optional['MetricsCollector']
-        ) -> float:
-            """
-            Calculate dynamic confidence threshold based on recent success rates.
-            
-            Uses metrics.analyze_patterns() to adjust threshold:
-            - High success rate (>80%) → lower threshold (0.6) for faster decisions
-            - Medium success rate (50-80%) → standard threshold (0.7)
-            - Low success rate (<50%) → higher threshold (0.8) for more caution
-            """
-            if not metrics_collector:
-                return 0.7  # Default threshold
-            
-            patterns = metrics_collector.analyze_patterns(limit=100)
-            recommended = patterns.get("recommended_confidence_threshold", 0.7)
-            
-            print(f"[METRICS_ROUTING] Dynamic confidence threshold: {recommended:.2f} "
-                  f"(based on {patterns.get('total_executions_analyzed', 0)} executions, "
-                  f"success rate: {patterns.get('overall_success_rate', 0):.2%})")
-            
-            return recommended
-
-    # ========================================================================
-    # Integrated Routing Engine (Moved from analysis/error/routing_engine.py)
-    # ========================================================================
-
-    class RoutingEngine:
-        """
-        Centralized routing engine with Strategy Pattern support.
-
-        Enhanced from .github/agents/tool/analysis/error/routing_engine.py
-        to support both keyword-based and metrics-based routing strategies.
-
-        Responsibilities:
-        - Tier D initial routing decision (Rule 1)
-        - Tier C/E routing validation (Rule 2)
-        - Auto-resolve chain routing (D → C → B)
-        - Strategy-based routing with metrics integration
-
-        Note: As inner class of MainAgent, accesses outer instance via self.main_agent
-        """
-
-        def __init__(self, main_agent: "MainAgent"):
-            """
-            Initialize RoutingEngine with routing strategies.
-
-            Args:
-                main_agent: Reference to outer MainAgent instance for accessing
-                           decision_engine, metrics, etc.
-            """
-            self.main_agent = main_agent
-            
-            # Initialize routing strategies
-            self.keyword_strategy = main_agent.KeywordRoutingStrategy(self)
-            self.metrics_strategy = main_agent.MetricsBasedRoutingStrategy(self)
-            
-            # Set up bidirectional fallback
-            self.metrics_strategy.fallback_strategy = self.keyword_strategy
-            
-            # Default to metrics-based strategy if metrics enabled
-            self.active_strategy: MainAgent.IRoutingStrategy = (
-                self.metrics_strategy if main_agent.enable_metrics
-                else self.keyword_strategy
-            )
-            
-            print(f"[ROUTING_ENGINE] Initialized with strategy: "
-                  f"{type(self.active_strategy).__name__}")
-        
-        def set_strategy(self, use_metrics_based: bool):
-            """
-            Switch between keyword-based and metrics-based routing strategies.
-            
-            Args:
-                use_metrics_based: If True, use MetricsBasedRoutingStrategy.
-                                  If False, use KeywordRoutingStrategy.
-            """
-            if use_metrics_based and self.main_agent.enable_metrics:
-                self.active_strategy = self.metrics_strategy
-                print("[ROUTING_ENGINE] Switched to MetricsBasedRoutingStrategy")
-            else:
-                self.active_strategy = self.keyword_strategy
-                print("[ROUTING_ENGINE] Switched to KeywordRoutingStrategy")
-        
-        def get_dynamic_confidence_threshold(self) -> float:
-            """
-            Get dynamic confidence threshold from active strategy.
-            
-            Returns:
-                Confidence threshold (0.0-1.0) calculated by active strategy
-            """
-            return self.active_strategy.calculate_confidence_threshold(
-                self.main_agent.metrics
-            )
-
-        # Rule 1: Tier D initial routing rules
-        TIER_D_ROUTING_RULES = {
-            "bug": {
-                "implementation_error": "C",  # Tier C: code modification
-                "environment_error": "B",  # Tier B: re-execute in environment
-                "data_error": "E",  # Tier E: data management
-            },
-            "design_flaw": {
-                "architecture": "A",  # Tier A: new plan
-                "algorithm": "C",  # Tier C: modify existing plan
-                "interface": "C",  # Tier C: modify existing plan
-            },
-            "implementation": "C",  # Tier C: plan modification
-            "documentation": "E",  # Tier E: document management
-            "unknown": "F",  # Tier F: re-classification
-        }
-
-        # Rule 2: Valid next tier routing for each tier (SUCCESS case)
-        VALID_NEXT_ROUTINGS = {
-            "A": ["B", "C", "E", None],  # Plan created → execute/modify/document/end
-            "B": ["E", "C", None],  # Executed → document/modify/end
-            "C": ["B", "E", None],  # Modified → execute/document/end
-            "E": [None],  # Documented → end only
-            "F": ["A", "B", "C", "D", "E", None],  # Re-classified → anywhere
-        }
-
-        # Rule 2: Failure routing for each tier
-        FAILURE_NEXT_ROUTINGS = {
-            "A": ["D", None],  # Failed → analyze or end
-            "B": ["D", None],
-            "C": ["D", None],
-            "E": ["D", None],
-            "F": [None],  # F failed → end
-        }
-
-        def decide_initial_routing_for_d(
-            self, classification: IssueClassification, strategy: ResolutionStrategy
-        ) -> RoutingInfo:
-            """
-            Tier D initial routing decision (Rule 1).
-
-            Renamed from decide_initial_routing to avoid ambiguity.
-
-            Args:
-                classification: Issue classification result
-                strategy: Resolution strategy
-
-            Returns:
-                RoutingInfo object
-            """
-            issue_type = classification.issue_type
-            category = classification.category
-
-            # Step 1: Apply routing rule
-            target_tier = self._apply_routing_rule(issue_type, category)
-
-            # Step 2: Calculate routing confidence
-            confidence = self._calculate_routing_confidence(
-                classification.confidence_score, strategy
-            )
-
-            # Step 3: Generate routing reason
-            routing_reason = self._generate_routing_reason(
-                issue_type, category, strategy.approach
-            )
-
-            # Step 4: Build metadata
-            metadata = {
-                "analysis_type": issue_type,
-                "approach": strategy.approach,
-                "priority": strategy.priority,
-                "estimated_effort": strategy.estimated_effort,
-                "wpd_grade": strategy.wpd_grade,
-            }
-
-            return RoutingInfo(
-                target_tier=target_tier,
-                routing_reason=routing_reason,
-                routing_confidence=confidence,
-                requires_clarification=confidence < 0.7,
-                clarification_questions=self._generate_clarification_questions(
-                    issue_type, confidence
-                ),
-                metadata=metadata,
-            )
-
-        def validate_next_routing(
-            self, current_tier: str, target_tier: str, tier_result: Dict[str, Any]
-        ) -> bool:
-            """
-            Validate next tier routing (Rule 2).
-
-            Args:
-                current_tier: Current tier
-                target_tier: Target tier
-                tier_result: Current tier result {"status": "SUCCESS" or "FAILURE"}
-
-            Returns:
-                True if routing is valid
-            """
-            status = tier_result.get("status", "UNKNOWN")
-
-            if status == "SUCCESS":
-                valid_tiers = self.VALID_NEXT_ROUTINGS.get(current_tier, [])
-            else:
-                valid_tiers = self.FAILURE_NEXT_ROUTINGS.get(current_tier, [])
-
-            return target_tier in valid_tiers
-
-        def _apply_routing_rule(self, issue_type: str, category: str) -> str:
-            """Apply routing rule based on issue type and category"""
-            if issue_type in self.TIER_D_ROUTING_RULES:
-                rules = self.TIER_D_ROUTING_RULES[issue_type]
-
-                # Category-based routing
-                if isinstance(rules, dict) and category in rules:
-                    return rules[category]
-
-                # Default routing for this issue type
-                if isinstance(rules, str):
-                    return rules
-
-            # Default: re-classification
-            return "F"
-
-        def _calculate_routing_confidence(
-            self, classification_confidence: float, strategy: ResolutionStrategy
-        ) -> float:
-            """Calculate routing confidence"""
-            # Classification confidence * strategy confidence
-            strategy_confidence = {
-                "low": 0.95,
-                "medium": 0.80,
-                "high": 0.60,  # Higher effort → lower confidence
-            }.get(strategy.estimated_effort, 0.80)
-
-            return min(1.0, classification_confidence * strategy_confidence)
-
-        def _generate_routing_reason(
-            self, issue_type: str, category: str, approach: str
-        ) -> str:
-            """Generate routing reason"""
-            reason_templates = {
-                "bug": f"Bug detected ({category or 'implementation'}). Approach: {approach}",
-                "design_flaw": f"Design issue ({category or 'general'}). Requires architectural review.",
-                "implementation": "Implementation improvement needed.",
-                "documentation": "Documentation update required.",
-                "unknown": "Issue requires further analysis and classification.",
-            }
-
-            return reason_templates.get(
-                issue_type, f"Route to appropriate tier for {approach}"
-            )
-
-        def _generate_clarification_questions(
-            self, issue_type: str, confidence: float
-        ) -> List[str]:
-            """Generate clarification questions"""
-            if confidence > 0.7:
-                return []
-
-            questions = []
-
-            if issue_type == "unknown":
-                questions.append("Can you provide more specific error information?")
-                questions.append("What is the context in which this issue occurred?")
-
-            if confidence < 0.5:
-                questions.append("Could you describe the expected vs actual behavior?")
-                questions.append("When did this issue start occurring?")
-
-            return questions
-
-        def decide_routing(self, tier: str, result: Dict[str, Any]) -> str:
-            """
-            Centralized routing decision using active strategy (Strategy Pattern).
-
-            This is the single entry point for all routing decisions.
-            Delegates to the active strategy (keyword-based or metrics-based).
-
-            Args:
-                tier: Current tier (A-F)
-                result: Tier execution result
-
-            Returns:
-                Next tier to route to
-            """
-            # Use active strategy for routing decision
-            next_tier = self.active_strategy.decide_routing(
-                tier=tier,
-                result=result,
-                execution_history=self.main_agent.execution_history,
-                metrics_collector=self.main_agent.metrics
-            )
-            
-            return next_tier
-
-        def _apply_routing_rules_for_c(self, result: Dict[str, Any]) -> str:
-            """
-            Apply routing rules for Tier C (Plan Modification).
-
-            Tier C SUCCESS routing:
-            - If modification applied → B (re-execute)
-            - If documentation update only → E (document management)
-            - Default → None (end)
-
-            Args:
-                result: Tier C execution result
-
-            Returns:
-                Next tier
-            """
-            status = result.get("status", "UNKNOWN")
-
-            if status == "SUCCESS":
-                # Check if code/plan was modified → re-execute in B
-                modified_files = result.get("payload", {}).get("modified_files", [])
-                if modified_files:
-                    return "B"  # Re-execute with modified plan
-
-                # Check if documentation update → route to E
-                doc_updates = result.get("payload", {}).get("doc_updates", [])
-                if doc_updates:
-                    return "E"
-
-                # Default: end workflow
-                return None
-            else:
-                # FAILURE → route to D for analysis
-                return "D"
-
-        def _apply_routing_rules_for_e(self, result: Dict[str, Any]) -> str:
-            """
-            Apply routing rules for Tier E (Document Management).
-
-            Tier E SUCCESS routing:
-            - Always end (None) - documentation is final step
-
-            Tier E FAILURE routing:
-            - Route to D for analysis
-
-            Args:
-                result: Tier E execution result
-
-            Returns:
-                Next tier (None or D)
-            """
-            status = result.get("status", "UNKNOWN")
-
-            if status == "SUCCESS":
-                # Documentation complete → end workflow
-                return None
-            else:
-                # FAILURE → route to D for analysis
-                return "D"
-
-        def discover_steps(self, user_input: str) -> Optional[Dict[str, Any]]:
-            """
-            Automatically discover project steps from workspace structure.
-            
-            Scans docs_2/ directory for step-related files and references
-            to enable automated step execution without requiring explicit
-            documentation in NextTask-2.md.
-            
-            Args:
-                user_input: User's natural language input
-                
-            Returns:
-                Dictionary with step information if found, None otherwise:
-                {
-                    "step_number": int,
-                    "step_dir": str,  # e.g., "P8"
-                    "documents": List[str],  # Found related documents
-                    "context": str,  # Step context/goal extracted from docs
-                    "confidence": float  # Discovery confidence (0.0-1.0)
-                }
-            """
-            import re
-            from pathlib import Path
-            
-            # Extract step number from input (e.g., "step 8", "스텝 8", "P8")
-            step_patterns = [
-                r'step\s+(\d+)',
-                r'스텝\s+(\d+)',
-                r'part\s+(\d+)',
-                r'P(\d+)(?:\s|$|/)',
-            ]
-            
-            step_number = None
-            for pattern in step_patterns:
-                match = re.search(pattern, user_input, re.IGNORECASE)
-                if match:
-                    step_number = int(match.group(1))
-                    break
-            
-            if step_number is None:
-                return None
-            
-            # Scan workspace for step-related directories and files
-            workspace_path = Path(self.main_agent.workspace_root) / "docs_2"
-            if not workspace_path.exists():
-                return None
-            
-            # Look for P{number} directory
-            step_dir = f"P{step_number}"
-            step_path = workspace_path / step_dir
-            
-            discovered_info = {
-                "step_number": step_number,
-                "step_dir": step_dir,
-                "documents": [],
-                "context": "",
-                "confidence": 0.0
-            }
-            
-            # Check if step directory exists
-            if step_path.exists() and step_path.is_dir():
-                discovered_info["confidence"] += 0.3
-                
-                # Find all markdown files in step directory
-                md_files = list(step_path.rglob("*.md"))
-                discovered_info["documents"] = [str(f.relative_to(workspace_path)) for f in md_files]
-                
-                if md_files:
-                    discovered_info["confidence"] += 0.2
-                    
-                    # Try to extract step context from first markdown file
-                    try:
-                        with open(md_files[0], 'r', encoding='utf-8') as f:
-                            content = f.read(500)  # Read first 500 chars
-                            # Look for Goal: or 목표: lines
-                            goal_match = re.search(r'(?:Goal|목표):\s*(.+)', content, re.IGNORECASE)
-                            if goal_match:
-                                discovered_info["context"] = goal_match.group(1).strip()
-                                discovered_info["confidence"] += 0.2
-                    except Exception:
-                        pass
-            
-            # Check NextTask-2.md for explicit step reference
-            nexttask_path = workspace_path / "NextTask-2.md"
-            if nexttask_path.exists():
-                try:
-                    with open(nexttask_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                        # Look for step section
-                        step_pattern = rf'##\s+.*step\s+{step_number}[:\s](.+?)(?=\n##|\Z)'
-                        step_match = re.search(step_pattern, content, re.IGNORECASE | re.DOTALL)
-                        if step_match:
-                            discovered_info["confidence"] += 0.3
-                            if not discovered_info["context"]:
-                                # Extract goal from step section
-                                goal_match = re.search(r'(?:Goal|목표):\s*(.+)', step_match.group(1))
-                                if goal_match:
-                                    discovered_info["context"] = goal_match.group(1).strip()
-                except Exception:
-                    pass
-            
-            # Return None if confidence is too low (no evidence found)
-            if discovered_info["confidence"] < 0.3:
-                return None
-            
-            print(f"[STEP_DISCOVERY] Found step {step_number} (confidence: {discovered_info['confidence']:.2f})")
-            print(f"[STEP_DISCOVERY] Directory: {step_dir}, Documents: {len(discovered_info['documents'])}")
-            if discovered_info["context"]:
-                print(f"[STEP_DISCOVERY] Context: {discovered_info['context'][:100]}...")
-            
-            return discovered_info
-
-        def classify_input(self, user_input: str) -> tuple[str, float]:
-            """
-            Classify user input to determine initial tier with confidence score.
-
-            Enhanced with:
-            - Automated step discovery from workspace structure
-            - Decision Engine for automatic classification
-            - Keyword matching as baseline
-            - Confidence-based routing support
-
-            Args:
-                user_input: User's natural language input
-
-            Returns:
-                Tuple of (tier, confidence):
-                - tier: Initial tier (A-F)
-                - confidence: Classification confidence (0.0-1.0)
-            """
-            # Step 1: Attempt automated step discovery
-            step_info = self.discover_steps(user_input)
-            if step_info:
-                # Step discovered - determine appropriate tier based on input keywords
-                # Priority: modify > execute > create (to avoid "plan" in "modify plan")
-                user_lower = user_input.lower()
-                
-                # HIGHEST PRIORITY: If input contains "modify" or "change" keywords → Tier C
-                if any(kw in user_lower for kw in ["modify", "change", "edit", "update", "수정", "변경"]):
-                    print(f"[CLASSIFY] Step {step_info['step_number']} discovered → routing to Tier C (modification)")
-                    return ("C", step_info["confidence"])
-                
-                # If input contains "execute" or "perform" keywords → Tier B
-                elif any(kw in user_lower for kw in ["execute", "perform", "run", "implement", "실행", "진행"]):
-                    print(f"[CLASSIFY] Step {step_info['step_number']} discovered → routing to Tier B (execution)")
-                    return ("B", step_info["confidence"])
-                
-                # If input contains "create" keywords → Tier A
-                # Note: "plan" alone is ambiguous, so we check it last
-                elif any(kw in user_lower for kw in ["create", "새로운", "작성"]) or \
-                     (("plan" in user_lower or "wpd" in user_lower) and "modify" not in user_lower):
-                    print(f"[CLASSIFY] Step {step_info['step_number']} discovered → routing to Tier A (planning)")
-                    return ("A", step_info["confidence"])
-                
-                # Default: assume execution if step is explicitly mentioned
-                else:
-                    print(f"[CLASSIFY] Step {step_info['step_number']} discovered → defaulting to Tier B (execution)")
-                    return ("B", step_info["confidence"])
-            
-            # Step 2: Traditional keyword matching
-            tier_keywords = {
-                "A": [
-                    "create",
-                    "plan",
-                    "새로운",
-                    "작성",
-                    "wpd 생성",
-                    "work plan",
-                    "make plan",
-                    "generate plan",
-                    "start plan",
-                    "작업 계획 생성",
-                ],
-                "B": [
-                    "perform",
-                    "execute",
-                    "run",
-                    "실행",
-                    "진행",
-                    "작업 계획 실행",
-                    "do task",
-                    "complete task",
-                    "implement",
-                    "작업 수행",
-                ],
-                "C": [
-                    "change",
-                    "modify",
-                    "edit",
-                    "수정",
-                    "변경",
-                    "마일스톤",
-                    "update",
-                    "revise",
-                    "alter",
-                    "계획 변경",
-                ],
-                "D": [
-                    "error",
-                    "issue",
-                    "fails",
-                    "failure",
-                    "오류",
-                    "문제",
-                    "작동 안",
-                    "bug",
-                    "broken",
-                    "not working",
-                    "debug",
-                    "문제 분석",
-                ],
-                "E": [
-                    "save",
-                    "mapping",
-                    "저장",
-                    "동기화",
-                    "데이터 클래스",
-                    "필드",
-                    "document",
-                    "reflect",
-                    "update mapping",
-                    "문서 관리",
-                    "read file",
-                    "read",
-                    "파일 읽기",
-                ],
-            }
-
-            user_input_lower = user_input.lower()
-            tier_scores = {}
-
-            # Baseline: keyword matching with priority weights
-            # Higher-priority keywords get additional weight to break ties
-            priority_keywords = {
-                "modify": 0.5,
-                "change": 0.5,
-                "edit": 0.5,
-                "update": 0.3,
-                "error": 0.5,
-                "bug": 0.5,
-                "failure": 0.5,
-            }
-            
-            for tier, keywords in tier_keywords.items():
-                score = 0.0
-                for kw in keywords:
-                    if kw in user_input_lower:
-                        # Base score
-                        score += 1.0
-                        # Priority bonus for certain keywords
-                        if kw in priority_keywords:
-                            score += priority_keywords[kw]
-                
-                if score > 0:
-                    tier_scores[tier] = score
-
-            # Calculate keyword-based confidence
-            total_matches = sum(tier_scores.values())
-            keyword_confidence = 0.0
-            best_tier = None
-            
-            if tier_scores:
-                best_tier = max(tier_scores, key=tier_scores.get)
-                max_score = tier_scores[best_tier]
-                # Confidence based on ratio of max score to total matches
-                # Higher confidence if one tier dominates
-                keyword_confidence = min(0.9, 0.5 + (max_score / total_matches) * 0.4)
-
-            # Step 3: Use Decision Engine for automatic classification
-            if (
-                self.main_agent.enable_decision_engine
-                and self.main_agent.decision_engine
-            ):
-                try:
-                    context = create_decision_context(
-                        tier="INITIAL",
-                        status="PENDING",
-                        user_input=user_input,
-                        payload={"tier_scores": tier_scores},
-                    )
-                    decision = self.main_agent.decision_engine.evaluate_routing(context)
-
-                    # High confidence AI decision → use directly
-                    if decision.confidence > 0.8 and decision.next_tier:
-                        # Track AI classification metric
-                        if self.main_agent.enable_metrics and self.main_agent.metrics:
-                            self.main_agent.metrics.set_gauge(
-                                "ai_classification_confidence", decision.confidence
-                            )
-                        print(f"[CLASSIFY] Decision engine selected Tier {decision.next_tier} (confidence: {decision.confidence:.2f})")
-                        return (decision.next_tier, decision.confidence)
-
-                    # Track that we used keyword fallback
-                    if self.main_agent.enable_metrics and self.main_agent.metrics:
-                        self.main_agent.metrics.set_gauge(
-                            "keyword_classification_used", 1.0
-                        )
-
-                except Exception as e:
-                    # Decision Engine failed → fallback to keyword matching
-                    if self.main_agent.enable_metrics and self.main_agent.metrics:
-                        self.main_agent.metrics.increment_counter(
-                            "decision_engine_failures"
-                        )
-
-            # Step 4: Return keyword matching result or fallback
-            if best_tier:
-                print(f"[CLASSIFY] Keyword matching selected Tier {best_tier} (confidence: {keyword_confidence:.2f})")
-                return (best_tier, keyword_confidence)
-            else:
-                # No keyword match → default to Tier A (plan creation)
-                # Low confidence since it's a fallback
-                print(f"[CLASSIFY] No matches - defaulting to Tier A (confidence: 0.3)")
-                return ("A", 0.3)
-
-    # ========================================================================
-    # Routing Decision (Delegated to RoutingEngine)
-    # ========================================================================
-
-    def decide_routing(self, tier: str, result: Dict[str, Any]) -> str:
+    def decide_routing(self, tier: str, result: Dict[str, Any]) -> Optional[str]:
         """
         Centralized routing decision for all tiers (Wrapper for RoutingEngine).
 
@@ -1244,25 +447,157 @@ class MainAgent:
     # Classification (Delegated to RoutingEngine)
     # ========================================================================
 
-    def classify_input(self, user_input: str) -> tuple[str, float]:
+    def classify_input(self, user_input: str) -> Tuple[str, float]:
         """
-        Classify user input to determine initial tier with confidence score.
-
-        Enhanced with:
-        - Automated step discovery from workspace structure
-        - Decision Engine for automatic classification
-        - Keyword matching as baseline
-        - Confidence-based routing support
-
-        Args:
-            user_input: User's natural language input
-
-        Returns:
-            Tuple of (tier, confidence):
-            - tier: Initial tier (A-F)
-            - confidence: Classification confidence (0.0-1.0)
+        Classify user input with INDEPENDENT confidence scoring for each tier.
+        
+        **New Multi-Evaluation Approach**:
+        - Each tier evaluates independently with 0.0~1.0 confidence (NOT competitive distribution)
+        - Returns primary tier with highest confidence
+        - Stores ALL tiers with valid confidence (>= 0.4) for sequential routing
+        
+        Returns: (primary_tier, primary_confidence)
+        Side Effect: Sets self._alternative_tiers for sequential routing
         """
-        return self.routing_engine.classify_input(user_input)
+        user_input_lower = user_input.lower()
+        
+        # Enhanced keyword mapping with INDEPENDENT scoring (not competitive)
+        tier_keywords = {
+            "A": {
+                "keywords": [
+                    "create", "make", "new", "plan", "wpd", "work plan",
+                    "작업 계획", "생성", "작성", "문서 생성"
+                ],
+                "negative": ["edit", "modify", "change", "execute", "perform", "run", "save", "error", "debug"],
+                "max_score": 10.0,  # Independent max score
+            },
+            "B": {
+                "keywords": [
+                    "execute", "perform", "run", "implement", "do", "fulfill",
+                    "실행", "수행", "실행하기", "진행", "완료",
+                    "execute the plan", "perform plan", "run task"
+                ],
+                "negative": ["create", "plan", "edit", "error", "debug"],
+                "max_score": 10.0,
+            },
+            "C": {
+                "keywords": [
+                    "edit", "modify", "change", "update", "alter", "adjust",
+                    "수정", "변경", "편집", "업데이트", "조정",
+                    "edit plan", "modify task", "change task",
+                    # Document correction keywords (HIGH PRIORITY)
+                    "incorrectly created", "wrong document", "should merge",
+                    "잘못 생성", "문서 병합", "경로 수정", "incorrectly generated"
+                ],
+                "negative": ["create new", "execute", "run"],
+                "max_score": 12.0,  # Higher max for document correction
+            },
+            "D": {
+                "keywords": [
+                    "error", "bug", "issue", "problem", "debug", "fix",
+                    "not working", "broken", "failed", "failure",
+                    "오류", "버그", "문제", "해결", "디버그",
+                    "error handling", "debug issue",
+                    # Document ANALYSIS keywords (not correction)
+                    "analyze document", "check document", "validate",
+                    "문서 분석", "검증"
+                ],
+                "negative": ["create new", "execute"],
+                "max_score": 10.0,
+            },
+            "E": {
+                "keywords": [
+                    "save", "mapping", "relationship", "organize",
+                    "저장", "매핑", "관계", "정리",
+                    "save changes", "update mapping", "document management"
+                ],
+                "negative": ["create", "execute", "error"],
+                "max_score": 8.0,
+            },
+            "F": {
+                "keywords": [],  # Fallback - no specific keywords
+                "negative": [],
+                "max_score": 3.0,
+            },
+        }
+        
+        # INDEPENDENT EVALUATION: Each tier gets 0.0~1.0 independently
+        independent_scores: Dict[str, float] = {}
+        
+        for tier, tier_config in tier_keywords.items():
+            raw_score = 0.0
+            keywords = tier_config["keywords"]
+            negative = tier_config["negative"]
+            max_score = tier_config["max_score"]
+            
+            # Positive keyword matching (1.0 per keyword)
+            for keyword in keywords:
+                if keyword in user_input_lower:
+                    raw_score += 1.0
+            
+            # Negative keyword matching (penalize -0.5 per negative)
+            for neg_keyword in negative:
+                if neg_keyword in user_input_lower:
+                    raw_score -= 0.5
+            
+            # Context-specific bonuses (phrase matching)
+            if tier == "B" and "execute" in user_input_lower and "plan" in user_input_lower:
+                raw_score += 2.0
+            elif tier == "C":
+                # HIGH PRIORITY: Document incorrectly created/wrong path/merge needed
+                if ("incorrectly" in user_input_lower or "잘못" in user_input_lower) and \
+                   ("document" in user_input_lower or "문서" in user_input_lower or "generated" in user_input_lower or "created" in user_input_lower):
+                    raw_score += 4.0  # STRONG signal for Tier C
+                if ("merge" in user_input_lower or "병합" in user_input_lower) and \
+                   ("document" in user_input_lower or "문서" in user_input_lower):
+                    raw_score += 3.0
+                if "wrong directory" in user_input_lower or "wrong path" in user_input_lower or "잘못된 경로" in user_input_lower:
+                    raw_score += 3.0
+                if "should be in" in user_input_lower or "should merge" in user_input_lower:
+                    raw_score += 2.5
+            elif tier == "D":
+                # Document analysis (NOT correction) - should score LOWER than C for correction tasks
+                if ("error" in user_input_lower or "debug" in user_input_lower):
+                    raw_score += 1.5
+                # If it's document ANALYSIS (not correction), give moderate score
+                if ("document" in user_input_lower or "문서" in user_input_lower) and \
+                   not ("incorrectly" in user_input_lower or "merge" in user_input_lower or "wrong" in user_input_lower):
+                    raw_score += 1.0
+            
+            # Normalize to 0.0~1.0 using tier-specific max_score
+            normalized_score = min(1.0, max(0.0, raw_score / max_score))
+            independent_scores[tier] = normalized_score
+        
+        # Find primary tier (highest confidence)
+        primary_tier = max(independent_scores.keys(), key=lambda k: independent_scores[k])
+        primary_confidence = independent_scores[primary_tier]
+        
+        # Find ALL alternative tiers with valid confidence (>= 0.4)
+        VALID_THRESHOLD = 0.4
+        valid_tiers = [
+            (tier, conf) for tier, conf in independent_scores.items()
+            if conf >= VALID_THRESHOLD and tier != primary_tier
+        ]
+        
+        # Sort alternatives by confidence (descending)
+        valid_tiers.sort(key=lambda x: x[1], reverse=True)
+        
+        # Store alternatives for sequential routing
+        self._alternative_tiers = valid_tiers
+        
+        # Fallback to Tier F if primary confidence too low
+        if primary_confidence < 0.3:
+            primary_tier = "F"
+            primary_confidence = independent_scores.get("F", 0.3)
+            self._alternative_tiers = []  # Clear alternatives
+        
+        print(f"[CLASSIFY] Input: '{user_input}' -> Tier {primary_tier} (confidence: {primary_confidence:.2f})")
+        print(f"[CLASSIFY] Independent Scores: {independent_scores}")
+        if self._alternative_tiers:
+            alt_str = ", ".join([f"{t}({c:.2f})" for t, c in self._alternative_tiers])
+            print(f"[CLASSIFY] Alternative Tiers (>={VALID_THRESHOLD}): {alt_str}")
+        
+        return primary_tier, primary_confidence
 
     # ========================================================================
     # Circuit Breaker Management
@@ -1303,7 +638,7 @@ class MainAgent:
                     if self.metrics:
                         self.metrics.record_circuit_breaker_open(tier)
 
-                    print(f"[MAIN_AGENT] ⚠️ Circuit breaker OPEN for Tier {tier}")
+                    print(f"[MAIN_AGENT] Circuit breaker OPEN for Tier {tier}")
 
     def reset_circuit_breaker(self, tier: str):
         """Reset circuit breaker for tier"""
@@ -1349,10 +684,10 @@ class MainAgent:
                         f"[MAIN_AGENT] 🤖 Auto-resolve detected: Forcing route to Tier C"
                     )
                     print(
-                        f"[MAIN_AGENT]   → Action: {auto_resolve_details.get('action', 'N/A')}"
+                        f"[MAIN_AGENT]   -> Action: {auto_resolve_details.get('action', 'N/A')}"
                     )
                     print(
-                        f"[MAIN_AGENT]   → Target: {auto_resolve_details.get('target_file', 'N/A')}"
+                        f"[MAIN_AGENT]   -> Target: {auto_resolve_details.get('target_file', 'N/A')}"
                     )
                     next_tier = "C"  # Force routing to Tier C
 
@@ -1379,16 +714,16 @@ class MainAgent:
             if auto_resolve_details:
                 print(f"[MAIN_AGENT] 🤖 Auto-resolve detected from Tier D analysis")
                 print(
-                    f"[MAIN_AGENT]   → Action: {auto_resolve_details.get('action', 'N/A')}"
+                    f"[MAIN_AGENT]   -> Action: {auto_resolve_details.get('action', 'N/A')}"
                 )
                 print(
-                    f"[MAIN_AGENT]   → Target file: {auto_resolve_details.get('target_file', 'N/A')}"
+                    f"[MAIN_AGENT]   -> Target file: {auto_resolve_details.get('target_file', 'N/A')}"
                 )
                 print(
-                    f"[MAIN_AGENT]   → Confidence: {auto_resolve_details.get('confidence_level', 'N/A')}"
+                    f"[MAIN_AGENT]   -> Confidence: {auto_resolve_details.get('confidence_level', 'N/A')}"
                 )
                 print(
-                    f"[MAIN_AGENT]   → Estimated effort: {auto_resolve_details.get('estimated_effort', 'N/A')}"
+                    f"[MAIN_AGENT]   -> Estimated effort: {auto_resolve_details.get('estimated_effort', 'N/A')}"
                 )
 
                 # Force routing to Tier C for automatic resolution (destructive change allowed)
@@ -1398,7 +733,7 @@ class MainAgent:
                     f"Auto-resolve chain: D detected fix-capable issue. "
                     f"Routing to C for '{auto_resolve_details.get('action')}' "
                     f"on {auto_resolve_details.get('target_file', 'unknown file')}. "
-                    f"Chain: D → C → B (automatic re-execution)"
+                    f"Chain: D -> C -> B (automatic re-execution)"
                 )
 
                 # Record auto-resolve in metrics (using existing methods)
@@ -1410,7 +745,7 @@ class MainAgent:
                         "auto_resolve_confidence", 0.95, labels={"tier": "D"}
                     )
 
-                print(f"[MAIN_AGENT] ✓ Forced routing: D → C (auto-resolve chain)")
+                print(f"[MAIN_AGENT] [OK] Forced routing: D → C (auto-resolve chain)")
 
         # Apply policy rules
         policy_action = self.policy_engine.evaluate(
@@ -1781,15 +1116,24 @@ class MainAgent:
     ) -> List[str]:
         """
         Find alternative tiers that might be executable without human approval.
-
+        
+        Enhanced: Prioritize classification-based alternatives from self._alternative_tiers
+        
         Args:
             current_tier: Current tier requiring human approval
             context: Decision context
 
         Returns:
-            List of alternative tier names to try
+            List of alternative tier names to try (prioritized by classification confidence)
         """
-        # Define tier dependencies and alternatives
+        # PRIORITY 1: Use classification-based alternatives (from multi-evaluation)
+        classification_alternatives = []
+        if hasattr(self, '_alternative_tiers') and self._alternative_tiers:
+            # Extract tier names from (tier, confidence) tuples
+            classification_alternatives = [tier for tier, conf in self._alternative_tiers]
+            print(f"[ALTERNATIVE_ROUTING] Using classification-based alternatives: {classification_alternatives}")
+        
+        # PRIORITY 2: Fallback to dependency-based alternatives
         tier_alternatives = {
             "A": ["E", "F"],  # If A needs approval, try E or F first
             "B": ["E", "D"],  # If B needs approval, try E or D
@@ -1799,12 +1143,17 @@ class MainAgent:
             "F": [],  # F has no alternatives
         }
 
-        alternatives = tier_alternatives.get(current_tier, [])
+        dependency_alternatives = tier_alternatives.get(current_tier, [])
+        
+        # Combine: classification first, then dependency-based (avoid duplicates)
+        combined = classification_alternatives + [t for t in dependency_alternatives if t not in classification_alternatives]
 
         # Filter out tiers with open circuit breakers
         available = [
-            tier for tier in alternatives if not self.is_circuit_breaker_open(tier)
+            tier for tier in combined if not self.is_circuit_breaker_open(tier)
         ]
+        
+        print(f"[ALTERNATIVE_ROUTING] Available alternatives (after circuit breaker filter): {available}")
 
         return available
 
@@ -1848,6 +1197,31 @@ class MainAgent:
         print(f"[MAIN_AGENT] Human decision received: {next_tier} ({reason})")
 
         return decision
+
+    def _on_human_decision_resolved(self, decision_id: str, context: DecisionContext):
+        """Callback invoked when a human decision is resolved."""
+        decision_data = context.metadata.get("human_decision", {})
+        if not decision_data:
+            print(f"[MAIN_AGENT] Resolved {decision_id} but no decision payload found")
+            return
+
+        # Convert human decision to RoutingDecision via existing handler
+        routing_decision = self.handle_human_decision(decision_data)
+
+        # Store result in context for audit/trace
+        try:
+            context.metadata["_resolved_decision"] = routing_decision.to_dict()
+        except Exception:
+            context.metadata["_resolved_decision"] = {
+                "next_tier": routing_decision.next_tier,
+                "confidence": getattr(routing_decision, "confidence", None),
+            }
+
+        # If this was the current awaiting decision, clear awaiting state
+        if self.awaiting_decision and self.pending_decision_context == context:
+            self.awaiting_decision = False
+            self.pending_decision_context = None
+            print(f"[MAIN_AGENT] Human decision applied for {decision_id} (auto-resume possible)")
 
     # ========================================================================
     # Main Orchestration Logic
@@ -1894,9 +1268,9 @@ class MainAgent:
         # Check if manual override is needed
         if force_manual_routing or classification_confidence < manual_confidence_threshold:
             if force_manual_routing:
-                print(f"[MAIN_AGENT] ⚠️ Manual routing forced")
+                print(f"[MAIN_AGENT]  Manual routing forced")
             else:
-                print(f"[MAIN_AGENT] ⚠️ Low confidence ({classification_confidence:.2f} < {manual_confidence_threshold})")
+                print(f"[MAIN_AGENT]  Low confidence ({classification_confidence:.2f} < {manual_confidence_threshold})")
             
             print(f"[MAIN_AGENT] Suggested tier: {initial_tier}")
             print(f"[MAIN_AGENT] Available tiers:")
@@ -1913,7 +1287,7 @@ class MainAgent:
                     labels={"tier": initial_tier, "reason": "low_confidence"}
                 )
         else:
-            print(f"[MAIN_AGENT] ✓ High confidence - proceeding with automatic routing\n")
+            print(f"[MAIN_AGENT] [OK] High confidence - proceeding with automatic routing\n")
             if self.metrics:
                 self.metrics.increment_counter(
                     "automatic_routing_executed",
@@ -1972,13 +1346,13 @@ class MainAgent:
             # Check if human approval required - apply policy-based auto-decision
             if decision.requires_human_approval:
                 print(
-                    f"[MAIN_AGENT] ⚠️ Human approval requested (confidence: {decision.confidence:.2f})"
+                    f"[MAIN_AGENT]  Human approval requested (confidence: {decision.confidence:.2f})"
                 )
 
                 # Policy-based auto-decision: proceed automatically if confidence > 0.7
                 if decision.confidence >= 0.7:
                     print(
-                        f"[MAIN_AGENT] ✓ Auto-approving (confidence {decision.confidence:.2f} >= 0.7 threshold)"
+                        f"[MAIN_AGENT] [OK] Auto-approving (confidence {decision.confidence:.2f} >= 0.7 threshold)"
                     )
                     print(f"[MAIN_AGENT] Reasoning: {decision.reasoning}")
 
@@ -1997,7 +1371,7 @@ class MainAgent:
                     decision.requires_human_approval = False
                 else:
                     print(
-                        f"[MAIN_AGENT] ⚠️ Confidence too low ({decision.confidence:.2f} < 0.7), attempting system retry..."
+                        f"[MAIN_AGENT]  Confidence too low ({decision.confidence:.2f} < 0.7), attempting system retry..."
                     )
 
                     # Attempt system retry cycles before entering async wait
@@ -2007,7 +1381,7 @@ class MainAgent:
 
                     if alt_state:
                         # Alternative path succeeded, continue with that state
-                        print(f"[MAIN_AGENT] ✓ Alternative system path succeeded")
+                        print(f"[MAIN_AGENT] [OK] Alternative system path succeeded")
                         final_state = alt_state
                         previous_state = alt_state
 
@@ -2016,22 +1390,24 @@ class MainAgent:
                         if next_tier and next_tier != "STOP":
                             current_tier = next_tier
                             current_input = f"Continue from Tier {alt_state.tier}: {alt_state.logic_summary}"
-                            print(f"[MAIN_AGENT] → Next: Tier {current_tier}")
+                            print(f"[MAIN_AGENT] -> Next: Tier {current_tier}")
                             continue
                         else:
-                            print(f"[MAIN_AGENT] ✓ Execution chain complete")
+                            print(f"[MAIN_AGENT] [OK] Execution chain complete")
                             break
 
                     # No alternative succeeded - enter async wait (minimized to last resort)
                     decision_id = f"{self.current_session_id}_{iteration}"
+                    # attach decision id to context for traceability
+                    context.decision_id = decision_id
                     self.human_decision_queue.enqueue(decision_id, context)
                     self.awaiting_decision = True
                     self.pending_decision_context = context
 
                     print(
-                        f"[MAIN_AGENT] → Queued for async human decision (ID: {decision_id})"
+                        f"[MAIN_AGENT] -> Queued for async human decision (ID: {decision_id})"
                     )
-                    print(f"[MAIN_AGENT] → Continuing with non-blocking tasks...")
+                    print(f"[MAIN_AGENT] -> Continuing with non-blocking tasks...")
 
                     # In production, this would continue processing other tasks
                     # For now, we break and return current state
@@ -2047,13 +1423,13 @@ class MainAgent:
                 )
                 previous_state = state
 
-                print(f"[MAIN_AGENT] → Next: Tier {current_tier}")
+                print(f"[MAIN_AGENT] -> Next: Tier {current_tier}")
             else:
-                print(f"[MAIN_AGENT] ✓ Execution chain complete")
+                print(f"[MAIN_AGENT] [OK] Execution chain complete")
                 break
 
         if iteration >= max_iterations:
-            print(f"[MAIN_AGENT] ⚠️ Max iterations ({max_iterations}) reached")
+            print(f"[MAIN_AGENT] Max iterations ({max_iterations}) reached")
 
         print(f"\n{'='*80}")
         print(f"[MAIN_AGENT] Session Complete: {self.current_session_id}")
@@ -2077,7 +1453,7 @@ class MainAgent:
 
         for i, entry in enumerate(self.execution_history, 1):
             print(
-                f"{i}. Tier {entry['tier']} → {entry['status']} "
+                f"{i}. Tier {entry['tier']} -> {entry['status']} "
                 f"(Confidence: {entry.get('confidence', 0):.2f}, "
                 f"Retries: {entry.get('retry_count', 0)}, "
                 f"Next: {entry.get('next_node') or 'STOP'})"
@@ -2156,13 +1532,6 @@ def main():
     print("=" * 80)
     final_state.emit()
 
-def send_vibe_log(tier, message, confidence=1.0):
-    try:
-        url = "http://127.0.0.1:18989/log"
-        payload = {"tier": tier, "message": message, "confidence": confidence}
-        requests.post(url, json=payload, timeout=0.1) # 실행 속도에 지지 않도록 타임아웃 최소화
-    except:
-        pass # 모니터링 프로그램이 꺼져 있어도 에이전트는 계속 작동해야 함
 
 if __name__ == "__main__":
     main()

@@ -84,7 +84,10 @@ class DecisionContext:
     max_retries: int = 3
     confidence_threshold: float = 0.5
     require_human_approval: bool = False
-    
+
+    # Optional decision identifier for human-in-the-loop correlation
+    decision_id: Optional[str] = None
+
     # Additional metadata
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -489,6 +492,7 @@ class DecisionEngine:
 
 def create_decision_context(tier: str, status: str, user_input: str,
                            payload: Optional[Dict[str, Any]] = None,
+                           decision_id: Optional[str] = None,
                            **kwargs) -> DecisionContext:
     """
     Utility function to create DecisionContext.
@@ -498,6 +502,7 @@ def create_decision_context(tier: str, status: str, user_input: str,
         status: Execution status
         user_input: User input text
         payload: Optional payload dictionary
+        decision_id: Optional decision identifier
         **kwargs: Additional context fields
     
     Returns:
@@ -508,5 +513,6 @@ def create_decision_context(tier: str, status: str, user_input: str,
         status=status,
         user_input=user_input,
         payload=payload or {},
+        decision_id=decision_id,
         **kwargs
     )

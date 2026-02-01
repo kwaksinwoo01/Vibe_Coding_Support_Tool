@@ -25,7 +25,7 @@ ADMP Compliance:
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Tuple, Optional, Set, Any
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -504,6 +504,168 @@ class DocumentMerger:
                 }
                 for d in merge_decisions
             ]
+        }
+
+
+    def analyze_merge_strategy(
+        self,
+        source_path: Path,
+        related_docs: List[Path],
+        keywords: Optional[Set[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        신뢰도 기반 병합 전략 분석
+        
+        Args:
+            source_path: 신규 문서 경로
+            related_docs: 관련 문서 목록 (관련성 순)
+            keywords: 검색 키워드 (선택)
+            
+        Returns:
+            분석 결과 및 전략 권장사항
+        """
+        if not source_path.exists():
+            return {
+                "success": False,
+                "error": "Source document not found"
+            }
+        
+        # 신규 문서 분석
+        source_content = source_path.read_text(encoding='utf-8')
+        source_word_count = len(source_content.split())
+        source_metadata, source_sections = self.parse_document(source_path)
+        
+        # 관련 문서 분석
+        related_analyses = []
+        total_existing_words = 0
+        
+        for doc_path in related_docs[:5]:  # Top 5만 분석
+            if not doc_path.exists():
+                continue
+            
+            content = doc_path.read_text(encoding='utf-8')
+            word_count = len(content.split())
+            total_existing_words += word_count
+            
+            metadata, sections = self.parse_document(doc_path)
+            
+            # 키워드 매칭 점수
+            if keywords:
+                doc_keywords = self.analyzer.extract_keywords(content)
+                match_count = len(keywords.intersection(doc_keywords))
+                relevance_score = match_count / len(keywords) if keywords else 0.0
+            else:
+                relevance_score = 1.0 / (related_docs.index(doc_path) + 1)  # 순위 기반
+            
+            related_analyses.append({
+                "path": doc_path,
+                "word_count": word_count,
+                "section_count": len(sections),
+                "relevance_score": relevance_score,
+                "metadata": metadata
+            })
+        
+        # 전략 결정 (신뢰도 기반 작업 규칙)
+        if len(related_analyses) == 0:
+            # 관련 문서 없음 → 새로 생성
+            strategy = "UNIFIED_CREATION"
+            confidence = 0.6
+            reasoning = "No related documents found. New document should be created."
+            target_doc = None
+            recommendations = [
+                f"Create new document: {source_path.name}",
+                "Ensure proper directory structure (docs_2/P?/)",
+                "Link to related documents if discovered later"
+            ]
+        
+        elif len(related_analyses) > 1:
+            # 여러 문서 존재
+            if total_existing_words > source_word_count:
+                # 규칙 1: 여러 문서 분산 + 기존 > 신규
+                strategy = "DISTRIBUTED_EDIT"
+                confidence = 0.85
+                top_doc = related_analyses[0]["path"]
+                reasoning = (
+                    f"Multiple related documents ({len(related_analyses)}) with total content "
+                    f"({total_existing_words} words) larger than new content ({source_word_count} words). "
+                    f"Content should be distributed across existing documents."
+                )
+                target_doc = top_doc
+                recommendations = [
+                    f"Primary target: {top_doc.name}",
+                    f"Distribute content across {len(related_analyses)} related documents",
+                    "Keep existing document structure intact",
+                    "Add cross-references between affected documents",
+                    f"Delete {source_path.name} after merging"
+                ]
+            else:
+                # 규칙 3: 여러 문서 + 기존 < 신규 → 통합 생성
+                strategy = "UNIFIED_CREATION"
+                confidence = 0.75
+                top_doc = related_analyses[0]["path"]
+                reasoning = (
+                    f"Multiple related documents exist, but total content "
+                    f"({total_existing_words} words) is less than new content ({source_word_count} words). "
+                    f"Create consolidated document."
+                )
+                target_doc = None
+                recommendations = [
+                    f"Create consolidated document in same directory as {top_doc.name}",
+                    f"Merge content from {len(related_analyses)} related documents",
+                    "Update cross-references in original documents",
+                    "Consider deleting scattered documents after consolidation"
+                ]
+        
+        else:
+            # 단일 문서 존재
+            top_doc = related_analyses[0]["path"]
+            existing_words = related_analyses[0]["word_count"]
+            
+            if existing_words > source_word_count:
+                # 규칙 2: 단일 문서 + 기존 > 신규
+                strategy = "SINGLE_DOC_MODIFY"
+                confidence = 0.9
+                reasoning = (
+                    f"Single most relevant document ({top_doc.name}) exists with "
+                    f"substantial content ({existing_words} words) that exceeds new content "
+                    f"({source_word_count} words). Merge by modifying target document."
+                )
+                target_doc = top_doc
+                recommendations = [
+                    f"Target document: {top_doc.name}",
+                    "Use merge_documents() to integrate content semantically",
+                    "Update document version number",
+                    "Add changelog entry",
+                    f"Delete {source_path.name} after merging"
+                ]
+            else:
+                # 규칙 3: 단일 문서 + 기존 < 신규 → 통합 생성
+                strategy = "UNIFIED_CREATION"
+                confidence = 0.8
+                reasoning = (
+                    f"Single related document found, but new content "
+                    f"({source_word_count} words) exceeds existing document ({existing_words} words). "
+                    f"Create new consolidated document."
+                )
+                target_doc = None
+                recommendations = [
+                    f"Create new document in same directory as {top_doc.name}",
+                    f"Move content from {top_doc.name} into new document",
+                    "Consolidate all related information",
+                    "Update references in original location"
+                ]
+        
+        return {
+            "success": True,
+            "strategy": strategy,
+            "confidence": confidence,
+            "reasoning": reasoning,
+            "target_document": str(target_doc) if target_doc else None,
+            "related_documents": [str(a["path"]) for a in related_analyses],
+            "source_word_count": source_word_count,
+            "total_existing_words": total_existing_words,
+            "recommendations": recommendations,
+            "analysis_details": related_analyses
         }
 
 

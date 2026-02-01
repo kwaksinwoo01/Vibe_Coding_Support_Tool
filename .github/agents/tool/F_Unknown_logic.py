@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from models.core import AgentState, TierFState
 from models.builders import create_tier_f_state, create_pending_state
 from models.serializers import emit_agent_state
+from common.github_reporter import get_github_reporter
 
 
 class UnknownLogicHandler:
@@ -64,6 +65,9 @@ class UnknownLogicHandler:
         self.state = AgentState(tier="F", status="PENDING")  # Parent state
         self.tier_state = TierFState()  # Tier-specific state
         self.execution_log: List[str] = []
+        
+        # GitHub reporter for auto-reporting unclear logic
+        self.github_reporter = get_github_reporter()
     
     def log(self, message: str):
         """Add message to execution log"""
@@ -141,6 +145,10 @@ class UnknownLogicHandler:
                 self.state.next_node = classified_tier
                 
                 self.log(f"Routing to Tier {classified_tier}")
+                
+                # Auto-report if confidence is below 0.7 (Trigger 3)
+                if self.tier_state.confidence_score < 0.7:
+                    self._auto_report_unclear_logic(user_input)
             else:
                 # Unable to classify - request clarification
                 self.tier_state.requires_clarification = True
@@ -169,6 +177,9 @@ class UnknownLogicHandler:
                 self.state.add_warning("Input classification uncertain - clarification needed")
                 
                 self.log("Requesting user clarification")
+                
+                # Auto-report unclear logic (Trigger 3)
+                self._auto_report_unclear_logic(user_input)
             
             self.log("=" * 80)
             self.log("TIER F: Unknown Logic Handler - Completed")
@@ -186,6 +197,38 @@ class UnknownLogicHandler:
                 error_msg=f"Unknown logic handling failed: {str(e)}",
                 logic_summary=f"Exception during execution: {type(e).__name__}"
             )
+    
+    def _auto_report_unclear_logic(self, user_input: str) -> None:
+        """
+        Automatically report unclear logic to GitHub
+        
+        Creates a GitHub issue when entering F_Unknown_logic.py node,
+        enabling asynchronous feedback collection.
+        
+        Implements Part 8.3 requirements for automatic issue creation.
+        
+        Args:
+            user_input: Original user input that couldn't be classified
+        """
+        if not self.github_reporter.is_enabled():
+            self.log("  ℹ GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)")
+            return
+        
+        self.log("   Unclear logic detected. Auto-reporting issue to GitHub...")
+        
+        # Create the issue
+        issue_url = self.github_reporter.report_unclear_logic_issue(
+            user_input=user_input,
+            classification_attempted=True,
+            suggested_tier=self.tier_state.suggested_tier,
+            confidence_score=self.tier_state.confidence_score,
+            reasoning=self.tier_state.classification_reasoning or "No classification reasoning available"
+        )
+        
+        if issue_url:
+            self.log(f"  [OK] Created GitHub issue: {issue_url}")
+        else:
+            self.log(f"  [ERROR] Failed to create GitHub issue")
 
 
 def main(user_input: str, workspace_root: str = ".") -> AgentState:

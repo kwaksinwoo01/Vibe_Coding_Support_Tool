@@ -123,10 +123,10 @@ def example_admp_compliance():
     merged = target_path.read_text(encoding='utf-8')
     
     print("\n✅ ADMP Compliance Checks:")
-    print(f"   ✓ Version incremented: {result['old_version']} → {result['new_version']}")
-    print(f"   ✓ Changelog added: {'## 📝 Changelog' in merged}")
-    print(f"   ✓ No new files created (merged into existing)")
-    print(f"   ✓ Justification tracked in changelog")
+    print(f"   [OK] Version incremented: {result['old_version']} → {result['new_version']}")
+    print(f"   [OK] Changelog added: {'## 📝 Changelog' in merged}")
+    print(f"   [OK] No new files created (merged into existing)")
+    print(f"   [OK] Justification tracked in changelog")
 
 
 def example_semantic_matching():

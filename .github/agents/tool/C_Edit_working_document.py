@@ -31,6 +31,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 from models.core import AgentState, TierCState, TierAState, DocumentCreationContext, AgentLog
 from models.converters.tier_converters import TierStateConverter
 
+# Import DocumentMerger for merge operations
+try:
+    from doc_management import DocumentMerger
+    MERGER_AVAILABLE = True
+except ImportError:
+    MERGER_AVAILABLE = False
+    print("[WARNING] DocumentMerger not available - merge operations will fail")
+
 class PlanModificationEngine:
     """Engine for modifying existing work plan documents"""
     
@@ -50,6 +58,158 @@ class PlanModificationEngine:
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.execution_log.add_entry(message, timestamp)
         print(f"[{timestamp}] {message}")
+    
+    def _execute_document_merge(self, merge_analysis: Dict[str, Any]) -> AgentState:
+        """
+        Execute document merge based on Tier D analysis
+        
+        Args:
+            merge_analysis: Merge analysis from Tier D
+            
+        Returns:
+            AgentState with merge results and routing to Tier E
+        """
+        self.log("\n" + "="*80)
+        self.log("[DOCUMENT MERGE] Executing merge strategy from Tier D")
+        self.log("="*80)
+        
+        if not MERGER_AVAILABLE:
+            return AgentState.create_failure(
+                tier="C",
+                error_msg="DocumentMerger not available",
+                logic_summary="Cannot execute merge - DocumentMerger module missing"
+            )
+        
+        try:
+            strategy = merge_analysis.get("strategy")
+            source_doc = self.previous_payload.get("document_path", "")
+            target_doc = merge_analysis.get("target_document")
+            
+            self.log(f"\nMerge Strategy: {strategy}")
+            self.log(f"Source Document: {source_doc}")
+            self.log(f"Target Document: {target_doc or 'None'}")
+            self.log(f"Confidence: {merge_analysis.get('confidence', 0.0):.2%}")
+            
+            if strategy == "SINGLE_DOC_MODIFY":
+                # 단일 문서 병합
+                self.log("\n[STEP 1] Executing SINGLE_DOC_MODIFY strategy...")
+                
+                source_path = Path(self.workspace_root) / source_doc
+                target_path = Path(target_doc) if target_doc else None
+                
+                if not source_path.exists():
+                    return AgentState.create_failure(
+                        tier="C",
+                        error_msg=f"Source document not found: {source_path}",
+                        logic_summary="Merge failed - source missing"
+                    )
+                
+                if not target_path or not target_path.exists():
+                    return AgentState.create_failure(
+                        tier="C",
+                        error_msg=f"Target document not found: {target_path}",
+                        logic_summary="Merge failed - target missing"
+                    )
+                
+                # DocumentMerger 사용
+                merger = DocumentMerger(self.workspace_root)
+                self.log(f"\n[STEP 2] Merging {source_path.name} → {target_path.name}...")
+                
+                merge_result = merger.merge_documents(
+                    source_path=source_path,
+                    target_path=target_path,
+                    merge_justification=f"Consolidating duplicate document per Tier D analysis (confidence: {merge_analysis.get('confidence', 0.0):.2%})"
+                )
+                
+                if merge_result.get("success"):
+                    self.log(f"[OK] Merge successful:")
+                    self.log(f"  Version: {merge_result['old_version']} → {merge_result['new_version']}")
+                    self.log(f"  Integrated: {merge_result.get('integrated', 0)} sections")
+                    self.log(f"  Appended: {merge_result.get('appended', 0)} sections")
+                    self.log(f"  New sections: {merge_result.get('new_sections', 0)}")
+                    
+                    # 원본 문서 삭제
+                    self.log(f"\n[STEP 3] Deleting source document: {source_path.name}")
+                    source_path.unlink()
+                    self.log(f"[OK] Source document deleted")
+                    
+                    # C → E 라우팅 (규칙: C는 E로 부수적 문서 관리 작업 위임)
+                    return AgentState.create_success(
+                        tier="C",
+                        logic_summary=(
+                            f"Document merge completed. Merged {source_path.name} into {target_path.name}. "
+                            f"Version updated to {merge_result['new_version']}. Source deleted. "
+                            f"Routing to Tier E for document management finalization."
+                        ),
+                        payload={
+                            "merge_result": merge_result,
+                            "merge_analysis": merge_analysis,
+                            "source_deleted": True,
+                            "target_document": str(target_path),
+                            "all_related_docs_completed": True,  # C → E 규칙
+                            "doc_management_required": True  # E로 라우팅 플래그
+                        },
+                        next_node="E"  # C → E (부수적 문서 관리)
+                    )
+                else:
+                    return AgentState.create_failure(
+                        tier="C",
+                        error_msg=f"Merge failed: {merge_result.get('error', 'Unknown')}",
+                        logic_summary=f"DocumentMerger error: {merge_result.get('error', 'Unknown')}"
+                    )
+            
+            elif strategy == "DISTRIBUTED_EDIT":
+                # 여러 문서 분산 편집 - 수동 검토 필요
+                self.log("\n DISTRIBUTED_EDIT strategy requires manual review")
+                return AgentState.create_success(
+                    tier="C",
+                    logic_summary=(
+                        f"DISTRIBUTED_EDIT strategy detected. Requires distributing content "
+                        f"across {len(merge_analysis.get('related_documents', []))} documents. "
+                        f"Manual intervention recommended."
+                    ),
+                    payload={
+                        "merge_analysis": merge_analysis,
+                        "requires_manual_review": True
+                    },
+                    next_node="F"  # 수동 검토
+                )
+            
+            elif strategy == "UNIFIED_CREATION":
+                # 통합 문서 생성 → Tier A 호출
+                self.log("\n[STEP 1] UNIFIED_CREATION strategy - routing to Tier A")
+                return AgentState.create_success(
+                    tier="C",
+                    logic_summary=(
+                        f"UNIFIED_CREATION strategy: creating consolidated document. "
+                        f"Routing to Tier A for document creation."
+                    ),
+                    payload={
+                        "merge_analysis": merge_analysis,
+                        "requires_parent_creation": True,  # C → A 플래그
+                        "consolidated_content": self.previous_payload.get("document_content", "")
+                    },
+                    next_node="A"  # C → A (문서 생성)
+                )
+            
+            else:
+                self.log(f" Unknown merge strategy: {strategy}")
+                return AgentState.create_failure(
+                    tier="C",
+                    error_msg=f"Unknown merge strategy: {strategy}",
+                    logic_summary=f"Unsupported merge strategy"
+                )
+        
+        except Exception as e:
+            self.log(f"CRITICAL ERROR in document merge: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            return AgentState.create_failure(
+                tier="C",
+                error_msg=f"Document merge exception: {str(e)}",
+                logic_summary=f"Exception: {type(e).__name__}"
+            )
     
     def parse_user_specified_document(self, user_input: str) -> Optional[str]:
         """
@@ -300,7 +460,7 @@ class PlanModificationEngine:
                 self.tier_state.affected_sections.append("document_content")
                 return True
             else:
-                self.log(f"⚠️ Step 1.4.2: Changes not verified, retrying...")
+                self.log(f"️ Step 1.4.2: Changes not verified, retrying...")
                 return self.update_document(modified_doc_path, retry_count + 1)
         
         except Exception as e:
@@ -353,7 +513,7 @@ class PlanModificationEngine:
                         self.log(f"  - Created: {doc}")
                     return True
                 else:
-                    self.log("⚠️ Step 1.5.2: No documents created, retrying...")
+                    self.log("️ Step 1.5.2: No documents created, retrying...")
                     return self.create_new_documents(retry_count + 1)
             else:
                 self.log(f"❌ Step 1.5.0: Tier A invocation failed, retrying...")
@@ -559,7 +719,7 @@ class PlanModificationEngine:
             if "Auto-Modification Log" in updated_content:
                 self.log("✅ Step 3.2.2: Verified auto changes")
             else:
-                self.log("⚠️ Step 3.2.3: Retrying...")
+                self.log("️ Step 3.2.3: Retrying...")
                 # Would retry here in full implementation
         except Exception as e:
             self.log(f"ERROR Step 3.2.2: {e}")
@@ -613,6 +773,12 @@ class PlanModificationEngine:
         self.log("=" * 80)
         
         try:
+            # Check for document merge request from Tier D
+            merge_analysis = self.previous_payload.get("merge_analysis")
+            if merge_analysis:
+                self.log("\n[DOCUMENT MERGE MODE] Executing merge from Tier D analysis")
+                return self._execute_document_merge(merge_analysis)
+            
             # Check for automatic trigger from previous_payload
             if self.previous_payload and "solution_plan" in self.previous_payload:
                 self.log("Detected automatic trigger from Tier E")

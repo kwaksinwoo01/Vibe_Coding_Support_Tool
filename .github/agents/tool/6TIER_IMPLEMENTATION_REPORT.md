@@ -536,144 +536,109 @@ Refer to:
 
 ---
 
-## Testing & Validation
+## automatic routing rules
 
-### Test Scenario 1: Create Work Plan
+**Confidence Threshold Guidelines**:
 
-**Input**: `"Create a work plan for testing"`
+- **0.9-1.0**: Very high confidence - safe for critical operations
+- **0.8-0.9**: High confidence - default automatic routing
+- **0.7-0.8**: Medium confidence - consider manual review
+- **0.5-0.7**: Low confidence - manual review recommended
+- **0.0-0.5**: Very low confidence - manual selection required
 
-**Execution Flow:**
-1. ✅ Classified as Tier A (confidence: 3)
-2. ✅ Tier A executed successfully
-3. ✅ Created WPD document at `docs_2/P99/P99-New-Task.md`
-4. ✅ AgentState emitted with next_node="B"
-5. ✅ Auto-chained to Tier B
-6. ✅ Tier B loaded WPD document
-7. ⚠️ Tier B failed: No milestones section (expected)
+### Routing Constraints from Tier A (Detailed Rules)
 
-**Result**: A→B chaining works correctly ✅
+-A → B (conditions for allowing automatic routing)
+  -Synchronous automatic routing from A to B should be performed only when all subdocuments created in A (e.g. L1→L2→L3) actually exist and pass template/verification.
+  -If document creation is only partially completed or a verification error occurs, A does not automatically move to B, but must instead synchronously route from A to D (issue analysis) or request user intervention (correction/re-verification).
 
-### Test Scenario 2: Tier Classification
+-A → C (modified routing)
+  -Rarely occurs. When a document has been created but some content has not been reflected or it is determined that subsequent revision is necessary, it can be synchronously routed from A to C.
+  -However, automatic routing is possible only after all document creation procedures for A have been completed.
 
-| Input | Expected | Actual | Status |
-|-------|----------|--------|--------|
-| "Create a plan" | Tier A | Tier A | ✅ |
-| "Execute the plan" | Tier B | Tier B | ✅ |
-| "Fix the error" | Tier D | Tier D | ✅ |
-| "Something random" | Tier F | Tier F | ✅ |
+-A → D (issue analysis)
+  -If a serious verification failure or ambiguous conflict is discovered during creation/verification, A must immediately route to D to analyze the cause and establish a resolution strategy.
+-D can return to A when necessary and trigger a correction route such as A → C → A.
 
----
+-A → E (Document Management)
+  -When A delegates work to E, it is generally secondary (version update, link addition, etc.).
+  -Rather than automatically routing from A to E, A returns the execution of E as a suggestion or response and manual/asynchronous processing is recommended.
+  -Example: Upon completion of a conflict merge, A returns next_node=None and includes suggested_next: E in the payload to encourage further manual action on E.
 
-## Configuration
+-A → F (Exception handling)
+  -Automatic routing from A to F is prohibited. Automatic conversion from A to F is not permitted, and F is only used for explicit reclassification or in exceptional circumstances.
 
-### Agent Instructions Update
+Incorporate the above rules into your code and tests (add a summary of recommended changes to the 'Next Steps' section of the file).
 
-**File**: `.github/agents/my-agent-2.md`
+### Routing Constraints from Tier B (Detailed Rules)
 
-Added sections:
-- 🔧 Configuration Constants (NEXT_TASK path)
-- 🧠 6-Tier Task Orchestration Framework
-- Tier Hierarchy & Triggers table
-- AgentState Output Format specification
-- Usage examples
+-**B → A (PRD creation conversion)** 
+  -Automatic routing: B → A (or B → PRD generation path) is allowed only when report generation is required because a PRD (Results Report) does not exist.  
+  -MP (manual process) creation is excluded from automatic routing.
 
-### Constants
+-**B → C (Plan Modification)** 
+  -Conditions for allowing automatic routing: When the execution result clearly includes the need for modification and the payload contains specific modification instructions that C can handle.  
+  -Prohibited condition: Auto B→C is put on hold if “incomplete” work remains in the work order document.  
+  -Allowance condition: B → C → B circulation (re-execution after modification) is allowed when all instruction items in the work instruction document are completed.  
+  -When determining computation/memory/time limitations (lack of system resources): temporarily perform B→C→B routine to free working memory and resume (clear threshold required by policy).
+-**B → D (issue analysis, synchronous routing)**
+  -Automatic routing from B → D immediately when an error occurs.  
+  -Process two branches depending on the result of D:
+    1. Error in the prompt/instruction itself → D corrects the prompt and synchronously reroutes to B.  
+    2. Error due to insufficient work instructions (document) → D → C (correct document) → B (re-execute with modified instructions), synchronous chain.
 
-```python
-NEXT_TASK = "docs_2/NextTask-2.md"  # Main progress document (L0)
-```
+-**B → E (Document Management)**
+  -As an auxiliary step, E usually returns to B (reroute). Confidence threshold is low (secondary task).
 
----
-
-## Next Steps
-
-### Phase 3: Update Tier B (Priority: HIGH)
-
-1. **Parse WPD Phase Structure**
-   - Update `parse_milestones()` → `parse_phases()`
-   - Extract Phase sections: `### Phase [N]: [Title]`
-   - Handle nested subphases for L2/L3
-
-2. **Implement WPD-Based Execution**
-   - Execute based on WPD_grade level
-   - L3 → L2 → L1 execution order
-   - Generate PRD results
-
-3. **Add Results Report (PRD) Generation**
-   - Template-based PRD creation
-   - Link to parent WPD documents
-   - Execution summary and metrics
-
-### Phase 4: Implement Tier E (Priority: MEDIUM)
-
-1. **Document Management**
-   - Results Report validation
-   - Parent/child document linking
-   - Reference updates
-
-2. **Automatic Linking**
-   - Update parent documents with PRD links
-   - Update subdocuments with result references
-   - Maintain document relationship graph
-
-### Phase 5: Comprehensive Testing (Priority: MEDIUM)
-
-1. **End-to-End Tests**
-   - A→B→E full chain
-   - Document creation and validation
-   - Cross-tier data passing
-
-2. **Integration Tests**
-   - Each tier independently
-   - Chaining mechanisms
-   - Error handling and recovery
+-**B → F (Unclassified/Exception)**
+  -No automatic routing; If there are unfinished tasks, repeat B.
+**Implementation notes:**To reflect the above rules:
+1. Add ‘Incomplete task check’ and ‘Resource shortage threshold’ conditions to [`MainAgent.RoutingEngine._apply_routing_rules_for_c`](.github/agents/tool/main_agent.py)  
+2. Check for presence of PRD in B execution (`TaskExecutionEngine`) and reinforce PRD generation trigger ([`TaskExecutionEngine.generate_prd_report`](.github/agents/tool/B_Performing_Tasks.py))  
+3. Add unit/integration tests (B→A, B→C auto/hold, B→D synchronous chain, B→C→B when resource limited)---
 
 ---
 
-## Technical Debt
+### Routing Constraints from Tier C (Detailed Rules)
 
-1. **Tier B Milestone Parser**: Needs update to handle WPD Phase structure
-2. **Document Template Refactoring**: Create L0-L3 template classes
-3. **Error Handling**: Add comprehensive try-catch and recovery
-4. **Logging**: Implement structured logging for debugging
-5. **Performance**: Add execution time tracking and optimization
+-**C → A (document creation/parent conversion)**
+  Auto-routing conditions:
+  -If it needs to be moved to a changed document or sub-document, or if it does not fit the current document structure (grade) and needs to be relocated to a 'lower/parent', or if the target sub-document does not exist and a new document needs to be created (or parent document reorganized) → Automatically routed to A (document created/reorganized).
+  -C can internally call Tier A to create a sub-document, and if it determines that creation is necessary, it includes the `requires_parent_creation: true` flag in the payload.
 
-Remaining 5%:
+-**C → B (re-run after modification is complete)**
+  Auto-routing conditions:
+  -Automatic routing to B only when the change target (edit/create/delete) of C is completed (verification passed) for **all related parent↔child documents**.
+-Payload must include `all_related_docs_completed: true`.
 
-- Integration test refinement (tests work but need environment setup)
-- Additional inline documentation
-- Manual testing with actual repository documents
+-**C → D (Document error/encoding/analysis required)**
+  Auto-routing conditions:
+  -When a document has encoding errors, broken text, or the document itself needs analysis/correction (e.g. adding an error analysis report), immediately route to D.
+  -If the same encoding error occurs in succession (e.g. three times), an issue is created (committed) asynchronously, and C stops changing the document and subdocuments and only tries the parent document. If a problem occurs even when changing the parent document, rollback and abort. If the cause is a problem with the parent document instructions (prompt problem), D corrects the prompt and then restarts as C.
 
----
+-**C → E (auxiliary document work)**
+-E can route to E for ancillary document management tasks (version updates, link updates, etc.), which then redirects back to C. C should bundle routing to E once for one document to minimize C → E → C repetitions.
 
-## Dependencies
+-**C → F (Exception/Reclassification)** 
+  -No automatic routing. After document changes, the default priority is automatic routing to B.
 
-### Required Modules
-- `models/agent_state.py` - AgentState dataclass ✅
-- `models/document_models.py` - Document models ✅
-- `ADMP/document_template.py` - WPD templates ⚠️ (needs L0-L3 support)
+**Implementation Recommendations**:
+-When C succeeds/failures, the payload field (`all_related_docs_completed`, `requires_parent_creation`, `doc_encoding_errors`, `doc_management_required`) is clearly filled, and `MainAgent.RoutingEngine._apply_routing_rules_for_c()` is implemented to determine routing based on that field.
+-Added unit/integration tests: C→A, C→B (complete/partially completed), C→D (encoding/continued failure), C→E→C routine count limit test.
 
-### Python Packages
+---## Dependencies
+
+- `tool/models/document_format/templates.py` ✅
 - `pathlib` - Path manipulation ✅
 - `dataclasses` - State management ✅
 - `json` - AgentState serialization ✅
 - `re` - Pattern matching ✅
 - `datetime` - Timestamps ✅
 
----
-
-## Conclusion
-
-The 6-tier task orchestration framework foundation is complete and functional. The language graph successfully classifies natural language requests, and the tier chaining mechanism works correctly. 
-
-**Next Priority**: Complete Tier A full workflow implementation and update Tier B to parse WPD Phase structure to enable end-to-end A→B→E execution.
-
-**Estimated Time to Complete**:
-- Phase 2 (Tier A): 2-3 days
-- Phase 3 (Tier B): 1-2 days
-- Phase 4 (Tier E): 1-2 days
-- Phase 5 (Testing): 1-2 days
-- **Total**: 5-9 days
+**Constants**:
+```python
+NEXT_TASK = "docs_2/NextTask-2.md"  # Main progress document (L0)
+```
 
 ---
 
@@ -692,225 +657,40 @@ The 6-tier task orchestration framework foundation is complete and functional. T
 - ✅ Metrics tracking for classification and routing decisions
 
 **API Changes:**
+
 - `classify_input()` now returns `(tier, confidence)` tuple instead of just tier
+
+```python
+def classify_input(self, user_input: str) -> tuple[str, float]:
+    # Returns (tier, confidence)
+    pass
+```
+
 - `route_and_execute()` accepts new parameters:
   - `force_manual_routing: bool = False`
   - `manual_confidence_threshold: float = 0.8`
+
+#### route_and_execute() - New Parameters
+
+**Updated Signature (v2.1.0)**:
+```python
+def route_and_execute(
+    self,
+    user_input: str,
+    max_iterations: int = 10,
+    force_manual_routing: bool = False,           # NEW
+    manual_confidence_threshold: float = 0.8      # NEW
+) -> AgentState:
+    pass
+```
+
+**Parameters:**
+- `force_manual_routing`: Force manual tier selection regardless of confidence
+- `manual_confidence_threshold`: Minimum confidence for automatic routing (default: 0.8)
+
 - Backward compatible: old code still works with tuple unpacking
 
-**Documentation:**
-- Merged ENHANCED_FEATURES.md into this report
-- Added comprehensive testing section (55 tests, 100% passing)
-- Added best practices and troubleshooting guides
-- Added performance metrics and benchmarks
-- NextTask-2.md updated to v6.2.0
-- Step 8 renamed to "Automated Router Framework Project"
-
-**Testing:**
-- Added 18 new tests for step discovery and confidence routing
-- Updated 37 existing tests for backward compatibility
-- 100% test pass rate (55 total tests)
-- Added demo_step_discovery.py demonstration script
-
-**Validation:**
-- 4 end-to-end scenarios validated
-- Production-ready status confirmed
-- Performance benchmarks established
-
-**Breaking Changes:**
-- None - fully backward compatible
-
-### Version 2.0.3 (2026-01-15)
-
-**Status**: Tier A & Tier B Phase 3 Fully Implemented
-
-**Tier B Phase 3 Implementation:**
-- Phase 3.1: Enhanced hierarchical phase parsing (unlimited nesting depth)
-- Phase 3.2: WPD-grade-based document selection priority (L3 > L2 > L1 > L0)
-- Phase 3.3: PRD template-based comprehensive report generation
-- Phase 3.4: Complete testing & validation (27 tests, 100% passing)
-
-**Files Modified:**
-- `B_Performing_Tasks.py`: +372 lines (core implementation)
-- `test_tier_b_phase3.py`: +294 lines (new test file)
-- `test_b_performing_tasks.py`: +6/-4 lines (compatibility update)
-
-**Key Features:**
-- ✅ Hierarchical WPD phase parsing
-- ✅ Recursive subphase execution
-- ✅ PRD template generation with metrics
-- ✅ Full A→B→E workflow chaining
-- ✅ Complete backward compatibility
-
-### Version 2.0.0 (2026-01-14)
-
-**Status**: Refactoring Complete - Deprecated Modules Removed
-
----
-
-## 🎉 Latest Update: Deprecated Modules Removed log (v2.0.0)
-
-### Migration Complete
-
-✅ **Removed Deprecated Modules**:
-- `agent_models.py` — Deleted (superseded by `models/core/tier_states.py`)
-- `business_anaalysist.py` — Marked DEPRECATED (superseded by 6-tier orchestration)
-
-✅ **Added Serialization Methods**:
-- All tier states (TierAState through TierFState) now have `to_payload()` and `from_payload()` methods
-- AgentState now has `create_success()` helper for convenient state creation
-- TierBState extended with additional fields for execution tracking
-
-✅ **Verified Module Compatibility**:
-- All tier modules (A-F) verified to use `models/core` correctly
-- agent_indexer.py confirmed as standalone CLI tool with no deprecated dependencies
-
-### Breaking Changes
-
-⚠️ **No Backward Compatibility**:
-- Removed `Task` model from agent_models.py (use tier-specific states instead)
-- Removed `State` TypedDict from business_anaalysist.py (use AgentState with tier payloads)
-- task_history field removed from State (use TierBState.phase_results for execution tracking)
-
-### Migration Guide
-
-**Old Code** (deprecated):
-```python
-from tool.agent_models import Task
-state = {"task_history": [Task(agent="...", done=True, ...)]}
-```
-
-**New Code** (current):
-```python
-from models.core import AgentState, TierBState
-tier_b = TierBState(phase_results=[{"phase": "...", "status": "COMPLETED"}])
-state = AgentState(tier="B", status="SUCCESS", payload=tier_b.to_payload())
-```
-
----
-
-## Executive Summary
-
-Successfully implemented the foundational framework for a 6-tier task orchestration system that uses natural language processing to automatically classify user requests and chain execution across multiple specialized modules.
-
-### Key Achievements
-
-✅ **Created 6 Tier Modules** (A-F) with specialized responsibilities  
-✅ **Migrated to Clean Data Models** in `models/core` following SRP  
-✅ **Enhanced Language Graph Classification** with expanded keyword patterns  
-✅ **Implemented Tier Chaining Mechanism** with `previous_payload` and `next_node`  
-✅ **Removed Deprecated Modules** (agent_models.py deleted, business_anaalysist.py marked)  
-✅ **Validated A→B→E Chaining** works correctly with payload propagation  
-✅ **Added Automated Step Discovery** from workspace structure (v2.1.0)  
-✅ **Implemented Confidence-Based Routing** with configurable thresholds (v2.1.0)  
-✅ **Added Priority-Based Keyword Matching** for conflict resolution (v2.1.0)  
-
----
-
-## Enhanced Features (v2.1.0)
-
-*Agent Rationale: Merged ENHANCED_FEATURES.md into this report following ADMP Consolidation Principle. This prevents document fragmentation and maintains single source of truth for all orchestration framework features.*
-
-### 1. Automated Step Discovery 🔍
-
-The system can now automatically discover project steps from the workspace structure without requiring explicit documentation updates.
-
-#### How It Works
-
-The `discover_steps()` method scans the workspace for:
-- **Directory Patterns**: P{number} directories (e.g., P8, P5, P6)
-- **Document References**: Step mentions in NextTask-2.md
-- **Context Extraction**: Goal information from markdown files
-
-#### Supported Input Patterns
-
-- English: "step 8", "part 8"
-- Korean: "스텝 8"
-- Directory: "P8"
-- Mixed: "Execute step 8", "Create plan for step 5"
-
-#### Example Usage
-
-```python
-from main_agent import MainAgent
-
-agent = MainAgent(workspace_root='/path/to/workspace')
-
-# User input with step reference
-user_input = "Execute step 8"
-
-# Classification with step discovery
-tier, confidence = agent.classify_input(user_input)
-# Output: tier='B', confidence=0.80
-
-# Step discovery details are logged:
-# [STEP_DISCOVERY] Found step 8 (confidence: 0.80)
-# [STEP_DISCOVERY] Directory: P8, Documents: 20
-# [CLASSIFY] Step 8 discovered → routing to Tier B (execution)
-```
-
-#### Discovery Confidence Calculation
-
-The confidence score (0.0-1.0) is calculated based on:
-- **Directory exists**: +0.3
-- **Documents found**: +0.2
-- **Goal/context extracted**: +0.2
-- **NextTask-2.md reference**: +0.3
-
-### 2. Confidence-Based Routing 🎯
-
-Classification now returns a confidence score along with the tier, enabling intelligent routing decisions.
-
-#### Return Value
-
-```python
-tier, confidence = agent.classify_input(user_input)
-# tier: str - The classified tier (A-F)
-# confidence: float - Confidence score (0.0-1.0)
-```
-
-#### Automatic Routing
-
-When confidence >= 0.8 (configurable), the system automatically routes without manual intervention:
-
-```python
-# High confidence example
-tier, confidence = agent.classify_input("Create a new work plan")
-# tier='A', confidence=0.90
-# Action: AUTOMATIC ROUTING ✓
-```
-
-#### Manual Override
-
-When confidence < 0.8, the system suggests manual confirmation:
-
-```python
-# Low confidence example
-tier, confidence = agent.classify_input("Do something")
-# tier='A', confidence=0.30
-# Action: MANUAL OVERRIDE SUGGESTED ⚠️
-```
-
-#### Configurable Thresholds
-
-```python
-# Use default threshold (0.8)
-result = agent.route_and_execute(user_input)
-
-# Use custom threshold
-result = agent.route_and_execute(
-    user_input,
-    manual_confidence_threshold=0.95  # Require 95% confidence
-)
-
-# Force manual routing regardless of confidence
-result = agent.route_and_execute(
-    user_input,
-    force_manual_routing=True
-)
-```
-
-### 3. Priority-Based Keyword Matching
+#### 3. Priority-Based Keyword Matching
 
 Keywords are now weighted to resolve conflicts:
 
@@ -935,54 +715,20 @@ tier, confidence = agent.classify_input("Modify the existing plan")
 # tier='C', confidence=0.74
 ```
 
-### API Changes
 
-#### classify_input() - Updated Signature
+**Documentation:**
+- Merged ENHANCED_FEATURES.md into this report
+- Added comprehensive testing section (55 tests, 100% passing)
+- Added best practices and troubleshooting guides
+- Added performance metrics and benchmarks
+- NextTask-2.md updated to v6.2.0
+- Step 8 renamed to "Automated Router Framework Project"
 
-**Before (v2.0.3)**:
-```python
-def classify_input(self, user_input: str) -> str:
-    # Returns only tier
-    pass
-```
-
-**After (v2.1.0)**:
-```python
-def classify_input(self, user_input: str) -> tuple[str, float]:
-    # Returns (tier, confidence)
-    pass
-```
-
-**Backward Compatibility:**
-The change is backward compatible through tuple unpacking:
-```python
-# Old code still works (tuple is truthy)
-tier = agent.classify_input("Create plan")  
-# tier = ("A", 0.90), evaluates to True
-
-# New code can unpack
-tier, confidence = agent.classify_input("Create plan")
-```
-
-#### route_and_execute() - New Parameters
-
-**Updated Signature (v2.1.0)**:
-```python
-def route_and_execute(
-    self,
-    user_input: str,
-    max_iterations: int = 10,
-    force_manual_routing: bool = False,           # NEW
-    manual_confidence_threshold: float = 0.8      # NEW
-) -> AgentState:
-    pass
-```
-
-**Parameters:**
-- `force_manual_routing`: Force manual tier selection regardless of confidence
-- `manual_confidence_threshold`: Minimum confidence for automatic routing (default: 0.8)
-
-### Testing (v2.1.0)
+**Testing:**
+- Added 18 new tests for step discovery and confidence routing
+- Updated 37 existing tests for backward compatibility
+- 100% test pass rate (55 total tests)
+- Added demo_step_discovery.py demonstration script
 
 #### Running Tests
 
@@ -997,84 +743,45 @@ python -m unittest tests.test_step_discovery  # 18 tests
 python -m unittest tests.test_main_agent       # 37 tests
 ```
 
-#### Test Coverage
+**Validation:**
+- 4 end-to-end scenarios validated
+- Production-ready status confirmed
+- Performance benchmarks established
 
-- **Step Discovery Tests**: 6 tests
-- **Confidence Routing Tests**: 8 tests
-- **Integration Tests**: 4 tests
-- **Updated Existing Tests**: 37 tests
-- **Total**: 55 tests (100% passing)
+**Breaking Changes:**
+- None - fully backward compatible
 
-#### Running Demonstration
+### Version 2.0.3 (2026-01-15)
 
-```bash
-python demo_step_discovery.py
+**Status**: Tier A & Tier B Phase 3 Fully Implemented
+
+**Tier B Phase 3 Implementation:**
+- Phase 3.1: Enhanced hierarchical phase parsing (unlimited nesting depth)
+- Phase 3.2: WPD-grade-based document selection priority (L3 > L2 > L1 > L0)
+- Phase 3.3: PRD template-based comprehensive report generation
+- Phase 3.4: Complete testing & validation (27 tests, 100% passing)
+
+**Files Modified:**
+- `B_Performing_Tasks.py`: +372 lines (core implementation)
+- `test_tier_b_phase3.py`: +294 lines (new test file)
+- `test_b_performing_tasks.py`: +6/-4 lines (compatibility update)
+
+**Set API:**
+```python
+def classify_input(self, user_input: str) -> str:
+    # Returns only tier
+    pass
 ```
 
-This runs 5 comprehensive demonstrations:
-1. Automated Step Discovery (5 test cases)
-2. Confidence-Based Routing (4 test cases)
-3. Backward Compatibility (5 test cases)
-4. Manual Override Parameters
-5. Full Integration Example
+**Key Features:**
+- ✅ Hierarchical WPD phase parsing
+- ✅ Recursive subphase execution
+- ✅ PRD template generation with metrics
+- ✅ Full A→B→E workflow chaining
+- ✅ Complete backward compatibility
 
-### Performance Metrics
+### Version 2.0.0 (2026-01-14)
 
-#### Step Discovery
-
-- **Workspace Scan**: ~10-50ms (depends on number of files)
-- **Pattern Matching**: <1ms
-- **Context Extraction**: ~5-10ms per file
-- **Total Overhead**: ~20-100ms per classification
-
-#### Confidence Calculation
-
-- **Keyword Matching**: ~1-2ms
-- **Priority Weighting**: <1ms
-- **Total Overhead**: ~2-3ms per classification
-
-### Metrics Tracking
-
-The system tracks the following metrics:
-
-#### Classification Metrics
-- `ai_classification_confidence`: Confidence from decision engine
-- `keyword_classification_used`: Count of keyword fallback usage
-- `decision_engine_failures`: Count of decision engine failures
-
-#### Routing Metrics
-- `automatic_routing_executed`: Count of automatic routing decisions
-- `manual_override_suggested`: Count of manual override suggestions
-- `routing_confidence`: Current routing confidence score
-
-### Best Practices
-
-#### When to Use Step Discovery
-
-✅ **Good Use Cases:**
-- User mentions specific step numbers ("Execute step 8")
-- Working with documented project phases
-- Navigating between different project areas
-
-❌ **Not Recommended:**
-- Generic task descriptions without step references
-- Ad-hoc one-off tasks
-- Tasks spanning multiple steps
-
-#### Confidence Threshold Guidelines
-
-- **0.9-1.0**: Very high confidence - safe for critical operations
-- **0.8-0.9**: High confidence - default automatic routing
-- **0.7-0.8**: Medium confidence - consider manual review
-- **0.5-0.7**: Low confidence - manual review recommended
-- **0.0-0.5**: Very low confidence - manual selection required
-
-#### Manual Override Strategy
-
-Use `force_manual_routing=True` when:
-- Testing new workflows
-- Training new team members
-- Critical production changes
-- Debugging routing issues
+**Status**: Refactoring Complete - Deprecated Modules Removed
 
 ---

@@ -1,13 +1,13 @@
 ---
 name: Dropbox Automation
-description: Dropbox Automation System — Development Guide (v2.1)
+description: Dropbox Automation System — Development Guide (v2.2)
 ---
 
-# Dropbox Automation System — Agent Instructions v2.1
+# Dropbox Automation System — Agent Instructions v2.2
 
-**Version**: 2.4.0
+**Version**: 2.4.1
 **Created**: 2025-11-19
-**Updated**: 2026-01-17
+**Updated**: 2026-01-28
 **Purpose**: Comprehensive agent instructions with modular guideline references, workflow automation, and credit optimization
 
 ---
@@ -142,25 +142,6 @@ python .github/agents/tool/main_agent.py "<user_natural_language_request>"
 9. **Human-in-the-Loop Efficiency**: Retry mechanisms reduce unnecessary human interventions
 10. **Metrics-Driven Optimization**: Monitor and adjust based on collected performance data
 
-**Credit Consumption Targets**:
-- Simple queries (Tier F → classification): 1 credit
-- Plan creation (A → B → E): 3-5 credits (with caching)
-- Plan modification (C only): 1-2 credits
-- Issue analysis (D → suggested tier): 2-3 credits
-- Full workflow with retries: Max 10 credits (circuit breaker prevents more)
-
-**Optimization Checklist**:
-- [ ] Enable decision engine caching (`enable_decision_engine=True`)
-- [ ] Set appropriate confidence thresholds (default: 0.5)
-- [ ] Configure retry limits (default: max_retries=3)
-- [ ] Enable circuit breaker (default: `enable_circuit_breaker=True`)
-- [ ] Configure Redis for circuit breaker persistence (default: localhost:6379)
-- [ ] Enable metrics collection (default: `enable_metrics=True`)
-- [ ] Set human-in-the-loop retry cycles (default: max_cycles=2)
-- [ ] Use policy-based routing to skip unnecessary human approvals
-- [ ] Monitor metrics to identify credit waste patterns
-- [ ] Enable exponential backoff for transient failures
-
 #### 📊 Decision Tree: What Tier for What Task?
 
 | User Request Pattern | Classified As | Action Taken | Tools Used |
@@ -233,18 +214,17 @@ The system implements **5 core architecture patterns**:
 4. **Microkernel Architecture**: Extensible plugin-based strategy system
 5. **Publish-Subscribe (Event Bus)**: Topic-based decoupled event distribution
 
-**Key Design Patterns** (GoF):
-- **Strategy Pattern** ⭐⭐⭐⭐⭐: File operations, metadata processing, cursor strategies
-- **Factory Pattern** ⭐⭐⭐⭐: Object creation, strategy selection
-- **Facade Pattern** ⭐⭐⭐⭐: Interface simplification (oauth_interface.py, file_interface.py)
-- **Observer Pattern** ⭐⭐⭐⭐: PyQt5 signals/slots, event bus
-- **Singleton Pattern**: DomainClient, global managers
-- **Adapter Pattern**: Dropbox API integration, domain service wrappers
+**Key Design Patterns** (MVC and GoF):
+- **MVC Pattern** ⭐⭐⭐⭐: Separation of concerns with Model, Object creation model, View, Controller for PyQt5 GUI
+- **Observer Pattern** ⭐⭐⭐⭐: PyQt5 signals/slots, event bus, domain service wrappers, DomainClient, global managers
+- **Facade Pattern** ⭐⭐⭐⭐: Interface simplification (oauth_interface.py, file_interface.py), Dropbox API integration
 - **Builder Pattern**: Complex event filters, file metadata construction
 - **Decorator Pattern**: Logging, caching, retry logic
 
-## 🔑 Core Principles (SOLID)
+---
 
+## 🔑 Core Principles (SOLID)
+v
 1. **Single Responsibility**: Each class/module has ONE reason to change
    - Example: `ActorIdentifier` only identifies uploaders
    - Anti-pattern: Combining file operations + validation + logging in one class
@@ -285,24 +265,6 @@ pip install pytest PyQt5 dropbox --quiet
 3. `module-structure.md` - Directory structure
 4. `documentation-guidelines.md` - WPD/PRD system
 5. `agent-document-modification-policy.md` - ADMP rules
-
----
-
-## 📝 Task & Documentation
-
-### Task Document Format
-```markdown
-## 🟢 step N: [Task Title]
-### Goal: [Description]
-**Status**: ✅ COMPLETE | 🔄 IN PROGRESS | 📋 PENDING
-```
-
-### Three-Tier Documentation
-1. **WPD** (`docs_2/p{num}/`) - Implementation plans
-2. **PRD** (`docs_2/prd/`) - Progress tracking
-3. **MP** (`docs_2/mp/`) - Process flows
-
-**⚠️ Note**: MP files are now managed programmatically via `doc_management.mp` module
 
 ---
 

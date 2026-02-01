@@ -281,7 +281,7 @@ class WorkPlanCreationEngine:
                     print(f"✅ Template validation passed for {grade}: {file_path.name}")
                     return True, []
                 
-                print(f"❌ Template validation failed (attempt {attempt}/{max_retries})")
+                print(f"Template validation failed (attempt {attempt}/{max_retries})")
                 for error in errors:
                     print(f"  - {error}")
                 
@@ -981,7 +981,7 @@ class WorkPlanCreationEngine:
                     self.state.logic_summary = f"Auto-routed content merged into {conflict_resolution.target_document.name}"
                     return self.state
                 else:
-                    self.log("❌ Content merge failed, proceeding with normal creation")
+                    self.log("Content merge failed, proceeding with normal creation")
             
             # Step 1.0: Validate main document
             is_valid, main_grade_info = self.validate_main_document()

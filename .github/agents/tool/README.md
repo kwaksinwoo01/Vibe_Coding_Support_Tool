@@ -42,16 +42,19 @@ models/
 ## 🛠️ Utilities
 
 ### Agent Indexer
+
 - **`agent_indexer.py`** — Lightweight repository indexer that builds SQLite index for fast file search
 - **Workflow**: `.github/workflows/agent-indexer.yml` — Runs on main branch pushes (6+ commits)
 - **Output**: `.agent_index/ci_db.sqlite` (uploaded as GitHub release asset)
 
 ### Supporting Utilities
+
 - **`utils.py`** — State persistence (save_state, get_outline, save_outline)
 - **`tools.py`** — Web search and document retrieval utilities
 - **`md_autofix.py`** — Markdown formatting and validation
 
 ### Deprecated Modules (Migration Complete)
+
 - ~~`agent_models.py`~~ — **REMOVED** (superseded by `models/core/tier_states.py`)
 - ~~`business_anaalysist.py`~~ — **DEPRECATED** (superseded by 6-tier orchestration)
 
@@ -90,6 +93,7 @@ python agent_indexer.py query --db .agent_index/db.sqlite --q "search term"
 ### From Old Models to New Architecture
 
 **Old** → **New**:
+
 - `agent_models.Task` → Use tier-specific states (TierAState, TierBState, etc.)
 - `business_anaalysist.State` → AgentState with tier-specific payload
 - Direct field access → Nested dataclass access (e.g., `tier_a.metadata.Part_N`)

@@ -233,13 +233,10 @@ The system implements **5 core architecture patterns**:
 4. **Microkernel Architecture**: Extensible plugin-based strategy system
 5. **Publish-Subscribe (Event Bus)**: Topic-based decoupled event distribution
 
-**Key Design Patterns** (GoF):
-- **Strategy Pattern** ⭐⭐⭐⭐⭐: File operations, metadata processing, cursor strategies
-- **Factory Pattern** ⭐⭐⭐⭐: Object creation, strategy selection
-- **Facade Pattern** ⭐⭐⭐⭐: Interface simplification (oauth_interface.py, file_interface.py)
-- **Observer Pattern** ⭐⭐⭐⭐: PyQt5 signals/slots, event bus
-- **Singleton Pattern**: DomainClient, global managers
-- **Adapter Pattern**: Dropbox API integration, domain service wrappers
+**Key Design Patterns** (MVC and GoF):
+- **MVC Pattern** ⭐⭐⭐⭐: Separation of concerns with Model, Object creation model, View, Controller for PyQt5 GUI
+- **Observer Pattern** ⭐⭐⭐⭐: PyQt5 signals/slots, event bus, domain service wrappers, DomainClient, global managers
+- **Facade Pattern** ⭐⭐⭐⭐: Interface simplification (oauth_interface.py, file_interface.py), Dropbox API integration
 - **Builder Pattern**: Complex event filters, file metadata construction
 - **Decorator Pattern**: Logging, caching, retry logic
 
@@ -282,7 +279,6 @@ pip install pytest PyQt5 dropbox --quiet
 **Detailed** (`docs_2/guidelines/`):
 1. `workflow-1-guidelines.md` - Workflow-1 patterns
 2. `workflow-2-guidelines.md` - Workflow-2 patterns (MVC, Event Bus, UI)
-3. `module-structure.md` - Directory structure
 
 ---
 
