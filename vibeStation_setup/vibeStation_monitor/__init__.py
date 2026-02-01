@@ -6,6 +6,11 @@ A PyQt6+FastAPI application for editing and monitoring .github instructions.
 __version__ = "1.0.0"
 __author__ = "Vibe Coding Support Tool"
 
+from .app import VibeStationApp, main
+from .api import APIServer, LogEntry
+from .yaml_handler import YAMLHandler
+from .main_window import MainWindow
+
 # Lazy imports to avoid PyQt6 dependency issues
 __all__ = [
     'VibeStationApp',
