@@ -704,7 +704,7 @@ class SettingsDialog(QDialog):
         if not current_branch:
             current_branch = self.github_repo_config.branch
         
-        self.log(f"")
+        self.log("=" * 60)
         self.log(f"[검증 시작] 문서: {main_doc}")
         self.log(f"[검증] 선택된 브랜치: {current_branch}")
         
@@ -742,7 +742,7 @@ class SettingsDialog(QDialog):
                             self.github_repo_config.set_branch(branch)
                             self.log(f"  ✓ 브랜치 자동 변경: {current_branch} → {branch}")
                         
-                        self.log(f"")
+                        self.log("=" * 60)
                         self.log(f"✓✓✓ 검증 성공! ✓✓✓")
                         self.log(f"============================================================")
                         return True
@@ -754,11 +754,11 @@ class SettingsDialog(QDialog):
             except Exception as e:
                 self.log(f"  ✗ {branch}: {str(e)}")
         
-        self.log(f"")
+        self.log("=" * 60)
         self.log(f"✗✗✗ 검증 실패 ✗✗✗")
         self.log(f"  시도한 브랜치: {', '.join(branches_to_try)}")
         self.log(f"  파일 경로: {main_doc}")
-        self.log(f"")
+        self.log("=" * 60)
         self.log(f"  해결책:")
         self.log(f"  1. '찾기' 버튼으로 전체 검색")
         self.log(f"  2. 브랜치를 수동으로 변경")
