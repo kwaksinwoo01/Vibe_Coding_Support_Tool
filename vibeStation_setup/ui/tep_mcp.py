@@ -1,5 +1,6 @@
 """
-MCP Server Window - MCP 서버 제어 GUI 메인 윈도우
+MCP Server Tab - MCP 서버 제어 GUI 탭
+This module provides the MCP server control interface as a tab widget.
 """
 
 import sys
@@ -10,9 +11,9 @@ from datetime import datetime
 from pathlib import Path
 import logging
 
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout,
-    QHBoxLayout, QPushButton, QTextEdit, QLabel, QLineEdit, QMessageBox, QFileDialog, QGroupBox)
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout,
+    QHBoxLayout, QPushButton, QTextEdit, QLabel, QLineEdit, QMessageBox, QFileDialog, QGroupBox, QMainWindow)
+from PyQt6.QtCore import Qt, pyqtSignal
 
 from .settings_dialog import SettingsDialog
 from mcp_suver.core.server_thread import ServerThread
@@ -27,39 +28,97 @@ from settings.constants import (
 )
 
 # ============================================================================
-# MCP Server Window
+# Helper Functions
+# ============================================================================
+
+def check_redis_connection() -> bool:
+    """Redis 연결 확인"""
+    try:
+        import redis
+        r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
+        r.ping()
+        return True
+    except Exception:
+        return False
+
+def check_agent_path(agent_path: str) -> bool:
+    """Agent 파일 존재 확인"""
+    from pathlib import Path
+    return Path(agent_path).exists() if agent_path else False
+
+def run_agent_command(user_input: str, agent_path: str, env_vars: dict = None) -> str:
+    """Agent 명령 실행"""
+    try:
+        import subprocess
+        cmd = ["python", agent_path, user_input]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        return result.stdout if result.stdout else result.stderr
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def run_redis_cli_command(command: str) -> str:
+    """Redis CLI 명령 실행"""
+    try:
+        import redis
+        r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
+        # Parse command and execute
+        parts = command.split()
+        if not parts:
+            return "Empty command"
+        cmd = parts[0].upper()
+        args = parts[1:]
+        result = r.execute_command(cmd, *args)
+        return str(result)
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def run_terminal_command(command: str) -> str:
+    """터미널 명령 실행"""
+    try:
+        import subprocess
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=30)
+        return result.stdout if result.stdout else result.stderr
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+# ============================================================================
+# MCP Server Tab
 # ============================================================================
 
 
-class TepMCP(QMainWindow):
-    """MCP 서버 제어 GUI 메인 윈도우"""
+class TepMCP(QWidget):
+    """MCP 서버 제어 탭 (QWidget)
     
-    def __init__(self):
-        super().__init__()
+    이 클래스는 MainWindow의 탭으로 사용됩니다.
+    MainWindow에서 menubar와 window-level 설정을 관리합니다.
+    """
+    
+    # Signals for parent window communication
+    server_started = pyqtSignal(int)  # port
+    server_stopped = pyqtSignal()
+    status_changed = pyqtSignal(str)
+    log_message = pyqtSignal(str)
+    
+    def __init__(self, config_file=None, github_repo_config=None, env_vars=None, parent=None):
+        super().__init__(parent)
+        # Accept configuration from parent window
+        self.config_file = config_file if config_file else CONFIG_FILE
+        self.github_repo_config = github_repo_config if github_repo_config else GitHubRepositoryConfig()
+        self.env_vars = env_vars if env_vars else load_env_vars(self.config_file)
+        
         self.server_thread = None
         self.current_port = None
         self.agent_path = AGENT_PATH
-        self.github_repo_config = GitHubRepositoryConfig()
-        self.config_file = CONFIG_FILE
-
-        # 환경 변수 로드
-        self.env_vars = load_env_vars(self.config_file)
 
         self.initUI()
         self.check_prerequisites()
 
     def initUI(self):
-        """UI 초기화"""
-        self.setWindowTitle("MCP Server Controller v1.0")
-        self.setGeometry(100, 100, 900, 650)
-
-        # 메뉴바
-        menu_bar = self.menuBar()
-        settings_menu = menu_bar.addMenu("설정")
-        settings_action = settings_menu.addAction("환경설정")
-        settings_action.triggered.connect(self.show_settings_dialog)
-
-        main_layout = QVBoxLayout()
+        """UI 초기화 - 탭 전용 컨텐츠만 포함"""
+        # NO window-level calls: setWindowTitle, setGeometry, menuBar, statusBar
+        # Tab components should only create their content layout
+        
+        main_layout = QVBoxLayout(self)
 
         # === 로그 뷰어 ===
         log_group = QGroupBox("서버 로그")
@@ -113,13 +172,8 @@ class TepMCP(QMainWindow):
         agent_input_layout.addWidget(run_agent_btn)
         main_layout.addLayout(agent_input_layout)
 
-        container = QWidget()
-        container.setLayout(main_layout)
-        self.setCentralWidget(container)
-
-        self.statusBar().showMessage(f"로그 파일: {LOG_FILE}")
-
         # === 상태 그룹 ===
+        # Moved here since we removed the container widget pattern
         status_group = QGroupBox("서버")
         status_layout = QHBoxLayout()
 
@@ -157,11 +211,24 @@ class TepMCP(QMainWindow):
         status_layout.addLayout(status_right)
         status_group.setLayout(status_layout)
         main_layout.addWidget(status_group)
+        
+        # Set the layout for this widget (not setCentralWidget - that's for QMainWindow)
+        self.setLayout(main_layout)
 
     def show_settings_dialog(self):
-        """설정 다이얼로그 표시"""
-        dialog = SettingsDialog(self, self.config_file, self.github_repo_config, self.env_vars)
-        dialog.exec()
+        """설정 다이얼로그 표시 - 부모 윈도우를 통해 호출되어야 함"""
+        # This method should ideally be removed and handled by MainWindow
+        # Keeping it for now but it should use self.parent() if needed
+        if self.parent():
+            parent_window = self.parent()
+            while parent_window and not isinstance(parent_window, QMainWindow):
+                parent_window = parent_window.parent()
+            if parent_window:
+                dialog = SettingsDialog(parent_window, self.config_file, self.github_repo_config, self.env_vars)
+                dialog.exec()
+        else:
+            dialog = SettingsDialog(self, self.config_file, self.github_repo_config, self.env_vars)
+            dialog.exec()
 
     def check_prerequisites(self):
         """사전 요구사항 확인"""
@@ -315,19 +382,5 @@ class TepMCP(QMainWindow):
             except Exception as e:
                 self.log_error(f"로그 저장 실패: {e}")
 
-    def closeEvent(self, event):
-        """종료 시 서버 중지"""
-        if self.server_thread and self.server_thread.isRunning():
-            reply = QMessageBox.question(
-                self,
-                "종료 확인",
-                "서버가 실행 중입니다. 종료하시겠습니까?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.stop_server()
-                event.accept()
-            else:
-                event.ignore()
-        else:
-            event.accept()
+    # closeEvent removed - window lifecycle managed by MainWindow
+    # Server cleanup should be done through parent window signals
