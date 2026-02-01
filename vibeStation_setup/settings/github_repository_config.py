@@ -182,6 +182,9 @@ class GitHubRepositoryConfig:
         """GitHub API로 기본 브랜치 감지"""
         if not self.is_valid:
             return "main"
+
+        if not self.github_token:
+            return "main"
         
         try:
             import urllib.request
@@ -202,6 +205,10 @@ class GitHubRepositoryConfig:
     def fetch_available_branches(self, use_git: bool = False) -> list:
         """GitHub API로 활성 브랜치 목록 조회 (또는 git 명령어 사용)"""
         if not self.is_valid:
+            return []
+
+        if not self.github_token:
+            print("[GitHub API] GitHub Token 필요 - 브랜치 조회 차단")
             return []
         
         # git 명령어 방식 시도

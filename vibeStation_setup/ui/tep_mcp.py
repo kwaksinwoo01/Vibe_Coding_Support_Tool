@@ -24,7 +24,7 @@ from settings.config_manager import load_config, save_config, load_env_vars
 
 from settings.constants import (
     AGENT_PATH, FAVICON_PATH, GITHUB_REPO_PATH, MAIN_DOCUMENT_PATH,
-    REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_URL, DEFAULT_PORT, SERVER_HOST,
+    DEFAULT_PORT, SERVER_HOST,
     LOG_DIR, LOG_FILE, CONFIG_DIR, CONFIG_FILE
 )
 
@@ -35,32 +35,6 @@ logger.setLevel(logging.INFO)
 # ============================================================================
 # Helper Functions
 # ============================================================================
-
-def check_redis_connection() -> bool:
-    """Redis 연결 확인"""
-    try:
-        import redis
-        r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
-        r.ping()
-        return True
-    except Exception:
-        return False
-
-def run_redis_cli_command(command: str) -> str:
-    """Redis CLI 명령 실행"""
-    try:
-        import redis
-        r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
-        # Parse command and execute
-        parts = command.split()
-        if not parts:
-            return "Empty command"
-        cmd = parts[0].upper()
-        args = parts[1:]
-        result = r.execute_command(cmd, *args)
-        return str(result)
-    except Exception as e:
-        return f"Error: {str(e)}"
 
 def run_terminal_command(command: str) -> str:
     """터미널 명령 실행"""
@@ -134,14 +108,6 @@ class TepMCP(QWidget):
         main_layout.addWidget(log_group)
 
         # === 명령 입력 ===
-        cmd_layout = QHBoxLayout()
-        cmd_layout.addWidget(QLabel("Redis CLI:"))
-        self.redis_cmd_input = QLineEdit("KEYS checkpoint:*")
-        cmd_layout.addWidget(self.redis_cmd_input)
-        run_cmd_btn = QPushButton("실행")
-        run_cmd_btn.clicked.connect(self.run_redis_command)
-        cmd_layout.addWidget(run_cmd_btn)
-        main_layout.addLayout(cmd_layout)
 
         term_cmd_layout = QHBoxLayout()
         term_cmd_layout.addWidget(QLabel("터미널:"))
@@ -223,11 +189,6 @@ class TepMCP(QWidget):
         """사전 요구사항 확인"""
         self.log("\n[체크] 사전 요구사항 확인 중...")
 
-        if check_redis_connection():
-            self.log(" Redis 연결 정상")
-        else:
-            self.log(" Redis 연결 실패 (서버가 실행되지 않았거나 설정 오류)")
-
         self.log("✓ Agent 모듈(main_agent.py) 번들링됨 (경로 확인 불필요)")
 
     def start_server(self):
@@ -274,16 +235,6 @@ class TepMCP(QWidget):
         )
         output = result.stdout if result.stdout else result.stderr
         self.log(f"[Agent 결과]\n{output}")
-
-    def run_redis_command(self):
-        """Redis CLI 명령 실행"""
-        command = self.redis_cmd_input.text().strip()
-        if not command:
-            self.log("Redis 명령을 입력하세요.")
-            return
-        self.log(f"[Redis CLI] 실행: {command}")
-        result = run_redis_cli_command(command)
-        self.log(f"[Redis CLI 결과]\n{result}")
 
     def run_terminal_command(self):
         """터미널 명령 실행"""

@@ -1,11 +1,11 @@
 """
 classification_engine.py
 
-개선된 분류 엔진 (DB 기반 피드백 활용)
+개선된 분류 엔진 (SQLite DB 기반 피드백 활용)
 
 기능:
 - tier_keywords 방식에서 벗어남
-- 라우팅 히스토리 기반 동적 분류
+- 라우팅 히스토리 기반 동적 분류 (SQLite)
 - 피드백 데이터 활용
 - 신뢰도 점수 재계산 (매번 새로 측정)
 - 캐싱을 통한 성능 최적화
@@ -17,6 +17,7 @@ classification_engine.py
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime, timedelta
@@ -24,6 +25,9 @@ from dataclasses import dataclass
 import hashlib
 
 from routing_history import RoutingHistoryDB, RoutingRecord
+from database import DatabaseManager
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -37,13 +41,12 @@ class ClassificationResult:
 
 
 class ImprovedClassificationEngine:
-    """개선된 분류 엔진 (피드백 기반)"""
+    """개선된 분류 엔진 (SQLite DB 기반 피드백)"""
     
     def __init__(self, db_root: Path):
         self.db_root = Path(db_root)
         self.history_db = RoutingHistoryDB(db_root)
-        self.cache_file = self.db_root / "classification_cache.json"
-        self.cache_expiry = timedelta(hours=1)
+        self.db_manager = DatabaseManager(db_root)
         
         # 기본 키워드 (폴백용)
         self.base_keywords = {
@@ -55,6 +58,8 @@ class ImprovedClassificationEngine:
             "E": ["save", "document", "mapping", "저장", "매핑"],
             "F": []  # 폴백
         }
+        
+        logger.info("[CLASSIFIER] Initialized with SQLite backend")
     
     def classify(self, user_input: str, use_feedback: bool = True) -> ClassificationResult:
         """
@@ -247,11 +252,16 @@ class ImprovedClassificationEngine:
         actual_tier: str,
         notes: str = ""
     ):
-        """분류 피드백 저장 (학습 데이터)"""
-        self.history_db.add_classification_feedback(
+        """분류 피드백 저장 (SQLite 기반 학습 데이터)"""
+        self.db_manager.add_classification_feedback(
             user_input=user_input,
             classified_tier=classified_tier,
             actual_tier=actual_tier,
+            notes=notes
+        )
+        
+        is_correct = classified_tier == actual_tier
+        logger.info(f"[FEEDBACK] Saved classification feedback: {classified_tier} → {actual_tier} (correct: {is_correct})")
             notes=notes
         )
         

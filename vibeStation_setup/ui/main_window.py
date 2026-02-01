@@ -208,6 +208,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'mcp_log_ui'):
             self.mcp_log_ui.update_agent_status(status)
 
+    def log(self, message: str):
+        """로그 메시지 처리 (SettingsDialog에서 호출됨)"""
+        if hasattr(self, 'mcp_log_ui'):
+            self.mcp_log_ui.add_log('F', message, '완료')
+
     def closeEvent(self, event):
         """윈도우 종료 이벤트 - 모든 서버 정리"""
         # MainWindow의 서버 스레드 정리

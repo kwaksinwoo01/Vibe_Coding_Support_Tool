@@ -1,11 +1,19 @@
 """
 Configuration management utilities for vibeStation.
-Handles loading and saving configuration from .env and JSON files.
+Handles loading and saving configuration with encryption support.
 """
 import os
 import json
 from pathlib import Path
 from dotenv import load_dotenv
+from typing import Dict, Any, Optional
+
+# 암호화 기능 (선택사항)
+try:
+    from .encryption_manager import get_encryption_manager
+    ENCRYPTION_AVAILABLE = True
+except ImportError:
+    ENCRYPTION_AVAILABLE = False
 
 
 def load_env_config() -> dict:
@@ -20,7 +28,7 @@ def load_env_config() -> dict:
     }
 
 
-def load_env_vars(config_file: Path = None) -> dict:
+def load_env_vars(config_file: Optional[Path] = None) -> dict:
     """
     환경 변수 통합 로드
     JSON 설정 파일과 환경 변수를 결합하여 반환
@@ -94,3 +102,93 @@ def load_config(config_file: Path) -> dict:
     except Exception as e:
         print(f"설정 로드 실패: {e}")
     return {}
+
+
+# ============================================================================
+# 암호화된 설정 관리 함수
+# ============================================================================
+
+def save_encrypted_config(config: Dict[str, Any], config_dir: Optional[Path] = None, 
+                         sensitive_keys: Optional[list] = None) -> bool:
+    """
+    설정을 암호화하여 저장 (jasypt 스타일)
+    
+    Args:
+        config: 저장할 설정 딕셔너리
+        config_dir: 설정 디렉토리 (기본값: vibeStation_setup/config)
+        sensitive_keys: 암호화할 키 목록
+    
+    Returns:
+        저장 성공 여부
+    
+    Example:
+        >>> config = {
+        ...     "github_token": "ghp_xxxxx",
+        ...     "repo_path": "https://github.com/owner/repo.git"
+        ... }
+        >>> save_encrypted_config(config)
+    """
+    if not ENCRYPTION_AVAILABLE:
+        print("⚠ 암호화 라이브러리를 사용할 수 없습니다.")
+        print("  설치: pip install cryptography")
+        return save_config(config, config_dir / "config.json" if config_dir else Path("config/config.json"))
+    
+    try:
+        manager = get_encryption_manager(config_dir)
+        manager.save_config(config, sensitive_keys)
+        return True
+    except Exception as e:
+        print(f"암호화된 설정 저장 실패: {e}")
+        return False
+
+
+def load_encrypted_config(config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """
+    암호화된 설정을 로드하여 복호화
+    
+    Args:
+        config_dir: 설정 디렉토리
+    
+    Returns:
+        복호화된 설정 딕셔너리
+    
+    Example:
+        >>> config = load_encrypted_config()
+        >>> token = config.get("github_token")
+    """
+    if not ENCRYPTION_AVAILABLE:
+        print("⚠ 암호화 라이브러리를 사용할 수 없습니다.")
+        return {}
+    
+    try:
+        manager = get_encryption_manager(config_dir)
+        return manager.load_config()
+    except Exception as e:
+        print(f"암호화된 설정 로드 실패: {e}")
+        return {}
+
+
+def setup_encryption(config_dir: Optional[Path] = None) -> bool:
+    """
+    암호화 설정 초기화 (마스터 키 생성)
+    
+    Args:
+        config_dir: 설정 디렉토리
+    
+    Returns:
+        초기화 성공 여부
+    """
+    if not ENCRYPTION_AVAILABLE:
+        print("⚠ cryptography 라이브러리가 필요합니다.")
+        print("  설치: pip install cryptography")
+        return False
+    
+    try:
+        manager = get_encryption_manager(config_dir)
+        print("✓ 암호화 설정이 초기화되었습니다.")
+        print(f"  설정 파일: {manager.encrypted_config_file}")
+        print(f"  마스터 키: {manager.key_file}")
+        return True
+    except Exception as e:
+        print(f"암호화 설정 초기화 실패: {e}")
+        return False

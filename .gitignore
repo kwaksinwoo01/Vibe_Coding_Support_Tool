@@ -44,3 +44,10 @@ Thumbs.db
 .github/auth_key.txt
 .github/instructions_backup_*.yaml
 vibeStation/config_local.yaml
+# Encryption & Secrets
+vibeStation_setup/config/.key
+vibeStation_setup/config/.env
+vibeStation_setup/mcp_suver/.env
+*.key
+*secret*
+!**/example_secret*.json

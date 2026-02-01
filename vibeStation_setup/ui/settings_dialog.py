@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 from settings.github_repository_config import GitHubRepositoryConfig
 from .dialog.github_token_dialog import GitHubTokenHelpDialog
 from settings.config_manager import load_config, save_config, load_env_vars
-from settings.constants import AGENT_PATH, REDIS_URL
 
 # 환경 변수 로드
 load_dotenv()
@@ -87,10 +86,6 @@ class SettingsDialog(QDialog):
         # 브랜치 로드
         if "branch" in saved_config:
             self.branch_combo.setCurrentText(saved_config["branch"])
-
-        # Redis URL 로드
-        if "redis_url" in saved_config:
-            self.redis_url_input.setText(saved_config["redis_url"])
 
         # 문서 검색 옵션 로드
         if "docs2_filter" in saved_config:
@@ -240,13 +235,6 @@ class SettingsDialog(QDialog):
         agent_info.setStyleSheet("color: #4CAF50; font-weight: bold;")
         config_layout.addWidget(agent_info)
         
-        # Redis URL
-        redis_url_layout = QHBoxLayout()
-        redis_url_layout.addWidget(QLabel("Redis URL:"))
-        self.redis_url_input = QLineEdit(self.env_vars["REDIS_URL"])
-        redis_url_layout.addWidget(self.redis_url_input)
-        config_layout.addLayout(redis_url_layout)
-        
         # 적용 버튼
         apply_env_btn = QPushButton("환경 변수 적용")
         apply_env_btn.clicked.connect(self.apply_env_vars)
@@ -302,6 +290,16 @@ class SettingsDialog(QDialog):
         if not repo_path:
             self.log("저장소 경로를 입력하세요.")
             return
+
+        token = self.github_token_input.text().strip()
+        if not token:
+            self.log("⚠ GitHub Token을 입력해야 저장소를 확인할 수 있습니다.")
+            self.log("  Token 입력 후 다시 시도하세요.")
+            return
+
+        # GitHub Token 설정 (저장소 연결 전 필수)
+        self.github_repo_config.github_token = token
+        self.log("[GitHub] Token 인증 활성화됨")
         
         self.log(f"[GitHub] 저장소 연결 시도: {repo_path}")
         
@@ -313,11 +311,7 @@ class SettingsDialog(QDialog):
                 f"({self.github_repo_config.repo_type})"
             )
             
-            # GitHub Token 설정
-            token = self.github_token_input.text().strip()
-            if token:
-                self.github_repo_config.github_token = token
-                self.log("[GitHub] Token 지원 API 호출 (제한: 60 -> 5000)")
+            self.log("[GitHub] Token 지원 API 호출 (제한: 60 -> 5000)")
             
             # 브랜치 목록 조회
             self.log("[GitHub] 활성 브랜치 조회 중...")
@@ -633,7 +627,6 @@ class SettingsDialog(QDialog):
         config["repo_path"] = repo_path
         config["main_doc"] = main_doc
         config["branch"] = selected_branch or self.github_repo_config.branch
-        config["redis_url"] = self.redis_url_input.text().strip()
         config["docs2_filter"] = self.docs2_filter_checkbox.isChecked()
         config["docs_filter"] = self.docs_filter_checkbox.isChecked()
         config["keyword_filter"] = self.keyword_filter_checkbox.isChecked()
@@ -658,12 +651,10 @@ class SettingsDialog(QDialog):
         # 환경 변수 업데이트
         self.env_vars["GITHUB_TOKEN"] = self.github_token_input.text().strip()
         self.env_vars["WORKFLOW_SHARED_SECRET"] = self.workflow_secret_input.text().strip()
-        self.env_vars["REDIS_URL"] = self.redis_url_input.text().strip()
         
         # 시스템 환경 변수 설정
         os.environ["GITHUB_TOKEN"] = self.env_vars["GITHUB_TOKEN"]
         os.environ["WORKFLOW_SHARED_SECRET"] = self.env_vars["WORKFLOW_SHARED_SECRET"]
-        os.environ["REDIS_URL"] = self.env_vars["REDIS_URL"]
         
         # 설정 파일에 저장
         config = load_config(self.config_file)
