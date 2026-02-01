@@ -138,17 +138,19 @@ class GitHubRepositoryConfig:
                     )
                     if result.returncode == 0:
                         for line in result.stdout.split("\n"):
-                            if "origin" in line and "github.com" in line:
+                            if "origin" in line:
                                 parts = line.split()
                                 if len(parts) >= 2:
                                     url = parts[1]
-                                    config = GitHubRepositoryConfig()
-                                    if config.parse_repository(url):
-                                        self.owner = config.owner
-                                        self.repo_name = config.repo_name
-                                        self.branch = config.branch
-                                        self.is_valid = True
-                                        return True
+                                    # Only process GitHub URLs
+                                    if url.startswith(("https://github.com/", "http://github.com/", "git@github.com:")):
+                                        config = GitHubRepositoryConfig()
+                                        if config.parse_repository(url):
+                                            self.owner = config.owner
+                                            self.repo_name = config.repo_name
+                                            self.branch = config.branch
+                                            self.is_valid = True
+                                            return True
                     
                     result = subprocess.run(
                         ["git", "-C", self.repo_path, "symbolic-ref", "refs/remotes/origin/HEAD"],
