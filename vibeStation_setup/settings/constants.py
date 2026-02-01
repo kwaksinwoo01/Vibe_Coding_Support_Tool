@@ -41,6 +41,10 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 # Redis 데이터베이스 번호
 REDIS_DB = int(os.getenv("REDIS_DB", 0))
 
+# Redis URL (환경 변수 또는 호스트/포트/DB 정보를 사용하여 생성)
+# 예: redis://localhost:6379/0
+REDIS_URL = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+
 # ============================================================================
 # 서버 설정
 # ============================================================================

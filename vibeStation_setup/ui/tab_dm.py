@@ -79,8 +79,8 @@ class InstructionsEditorWidget(QWidget):
                 self.editor.setPlainText(content)
                 self.status_label.setText(f"Loaded: {instructions_path}")
             else:
-                self.editor.setPlainText("")
-                self.status_label.setText("No instructions file found")
+                self.status_label.setText("No copilot-instructions.md file found")
+                self.editor.setPlainText("# GitHub Copilot Instructions\n\nPlease create instructions file first.")
 
         except Exception as e:
             QMessageBox.warning(self, "Load Error", f"Failed to load instructions file:\n{str(e)}")
@@ -327,10 +327,12 @@ class SetupWizardWidget(QWidget):
             # Generate the instructions file
             success = self.generate_instructions_file(setup_data)
             if success:
-                self.status_label.setText("✓ 설정 완료! 파일이 생성되었습니다.")
                 self.setup_completed.emit(setup_data)
+                self.status_label.setText("✓ 설정이 완료되었습니다!")
+                self.status_label.setStyleSheet("color: green")
             else:
                 self.status_label.setText("✗ 파일 생성 실패")
+                self.status_label.setStyleSheet("color: red")
             
         except Exception as e:
             QMessageBox.critical(self, "오류", f"설정 처리 중 오류가 발생했습니다: {str(e)}")
@@ -504,10 +506,9 @@ class TepDM(QMainWindow):
         self.yaml_handler = yaml_handler
         self.config = config
         
-        # Check for existing copilot-instructions.md
-        self.check_instructions_file()
-        
+        # Initialize UI first, then check for existing copilot-instructions.md
         self.init_ui()
+        self.check_instructions_file()
         
     def check_instructions_file(self):
         """Check for existing copilot-instructions.md and handle user choice."""
@@ -585,16 +586,16 @@ class TepDM(QMainWindow):
             success = self.generate_instructions_file(setup_data)
             
             if success:
-                # Switch to editor tab for review and manual editing
-                tabs = self.findChild(QTabWidget)
-                if tabs:
-                    for i in range(tabs.count()):
-                        if tabs.tabText(i) == "📝 Instructions Editor":
-                            tabs.setCurrentIndex(i)
+                # Switch to editor tab for review and manual editing (if available)
+                if hasattr(self, 'tabs'):
+                    for i in range(self.tabs.count()):
+                        if self.tabs.tabText(i) == "📝 Instructions Editor":
+                            self.tabs.setCurrentIndex(i)
                             break
                 
-                # Reload content in editor
-                self.editor_widget.load_instructions_content()
+                # Reload content in editor (if exists)
+                if hasattr(self, 'editor_widget'):
+                    self.editor_widget.load_instructions_content()
                 
                 QMessageBox.information(
                     self, 
@@ -639,9 +640,15 @@ class TepDM(QMainWindow):
         self.setup_wizard = SetupWizardWidget()
         self.setup_wizard.setup_completed.connect(self.on_setup_completed)
         
-        # Replace central widget with setup wizard
-        if hasattr(self, 'central_widget'):
-            self.setCentralWidget(self.setup_wizard)
+        # If tabs exist, switch to the Setup Wizard tab; otherwise set as central widget
+        if hasattr(self, 'tabs'):
+            for i in range(self.tabs.count()):
+                if self.tabs.tabText(i) == "🛠️ Setup Wizard":
+                    self.tabs.setCurrentIndex(i)
+                    return
+            # If not found, add it
+            self.tabs.addTab(self.setup_wizard, "🛠️ Setup Wizard")
+            self.tabs.setCurrentIndex(self.tabs.count() - 1)
         else:
             self.setCentralWidget(self.setup_wizard)
     

@@ -43,7 +43,7 @@ vibeStation_setup/
 
 **Usage**:
 ```python
-from installer.main_window import SetupWizardWidget, InstructionsEditorWidget
+from ui.tab_dm import SetupWizardWidget, InstructionsEditorWidget
 ```
 
 ### 2. Monitor Module (`vibeStation_monitor/`)
@@ -144,7 +144,7 @@ from main_window import (
 
 **After:**
 ```python
-from installer.main_window import InstructionsEditorWidget, SetupWizardWidget
+from ui.tab_dm import InstructionsEditorWidget, SetupWizardWidget
 from main_window import MainWindow  # Still in same location
 ```
 
@@ -168,7 +168,7 @@ Each module can now be tested independently:
 
 ```bash
 # Test installer module
-python -c "from installer.main_window import SetupWizardWidget"
+python -c "from ui.tab_dm import SetupWizardWidget"
 
 # Test monitor module  
 python -c "from vibeStation_monitor.main_window import VibeStationMonitor"

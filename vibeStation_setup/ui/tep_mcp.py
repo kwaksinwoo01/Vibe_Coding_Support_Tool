@@ -22,7 +22,7 @@ from settings.config_manager import load_config, save_config, load_env_vars
 
 from settings.constants import (
     AGENT_PATH, FAVICON_PATH, GITHUB_REPO_PATH, MAIN_DOCUMENT_PATH,
-    REDIS_HOST, REDIS_PORT, REDIS_DB, DEFAULT_PORT, SERVER_HOST,
+    REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_URL, DEFAULT_PORT, SERVER_HOST,
     LOG_DIR, LOG_FILE, CONFIG_DIR, CONFIG_FILE
 )
 

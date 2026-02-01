@@ -19,7 +19,7 @@ Editor widget for viewing and modifying `copilot-instructions.md` files.
 
 **Usage**:
 ```python
-from installer.main_window import InstructionsEditorWidget
+from ui.tab_dm import InstructionsEditorWidget
 
 editor = InstructionsEditorWidget(yaml_handler, parent=self)
 layout.addWidget(editor)
@@ -42,7 +42,7 @@ Interactive setup wizard that guides users through creating a `copilot-instructi
 
 **Usage**:
 ```python
-from installer.main_window import SetupWizardWidget
+from ui.tab_dm import SetupWizardWidget
 
 wizard = SetupWizardWidget(parent=self)
 wizard.setup_completed.connect(self.on_setup_completed)

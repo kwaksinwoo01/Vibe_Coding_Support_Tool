@@ -15,7 +15,7 @@ import httpx
 
 from settings.constants import (
     AGENT_PATH, FAVICON_PATH, GITHUB_REPO_PATH, MAIN_DOCUMENT_PATH,
-    REDIS_HOST, REDIS_PORT, REDIS_DB, DEFAULT_PORT, SERVER_HOST,
+    REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_URL, DEFAULT_PORT, SERVER_HOST,
     LOG_DIR, LOG_FILE, CONFIG_DIR, CONFIG_FILE
 )
 # 로깅 설정
@@ -508,8 +508,9 @@ class ServerThread(QThread):
             self.log_signal.emit(f"[Redis] {REDIS_HOST}:{REDIS_PORT} 연결 시도...")
             self.redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
             
-            # RedisSaver 생성 (환경 변수 기반 redis_url 사용)
-            redis_url = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+            # RedisSaver 생성 (설정된 REDIS_URL 사용)
+            # 환경 변수 REDIS_URL이 설정되어 있으면 우선 사용하고, 아니면 settings.constants.REDIS_URL을 사용합니다
+            redis_url = os.getenv("REDIS_URL", REDIS_URL)
             self.checkpointer = RedisSaver(redis_url, redis_client=self.redis_client)
             
             self.log_signal.emit("[Redis] 체크포인터 초기화 완료")
