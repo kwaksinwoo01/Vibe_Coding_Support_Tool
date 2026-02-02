@@ -451,17 +451,10 @@ class MainAgent:
         """
         Classify user input with INDEPENDENT confidence scoring for each tier.
         
-        **New Multi-Evaluation Approach**:
-        - Each tier evaluates independently with 0.0~1.0 confidence (NOT competitive distribution)
-        - Returns primary tier with highest confidence
-        - Stores ALL tiers with valid confidence (>= 0.4) for sequential routing
-        
-        Returns: (primary_tier, primary_confidence)
-        Side Effect: Sets self._alternative_tiers for sequential routing
+        **Enhanced Multi-Evaluation with Document Path/Metadata Keywords**
         """
         user_input_lower = user_input.lower()
         
-        # Enhanced keyword mapping with INDEPENDENT scoring (not competitive)
         tier_keywords = {
             "A": {
                 "keywords": [
@@ -469,7 +462,7 @@ class MainAgent:
                     "작업 계획", "생성", "작성", "문서 생성"
                 ],
                 "negative": ["edit", "modify", "change", "execute", "perform", "run", "save", "error", "debug"],
-                "max_score": 10.0,  # Independent max score
+                "max_score": 10.0,
             },
             "B": {
                 "keywords": [
@@ -485,12 +478,12 @@ class MainAgent:
                     "edit", "modify", "change", "update", "alter", "adjust",
                     "수정", "변경", "편집", "업데이트", "조정",
                     "edit plan", "modify task", "change task",
-                    # Document correction keywords (HIGH PRIORITY)
                     "incorrectly created", "wrong document", "should merge",
                     "잘못 생성", "문서 병합", "경로 수정", "incorrectly generated"
                 ],
-                "negative": ["create new", "execute", "run"],
-                "max_score": 12.0,  # Higher max for document correction
+                # **Tier C는 '작업 계획서' 수정에만 해당 (WPD 문서)**
+                "negative": ["create new", "execute", "run", "classification", "location", "path", "directory", "folder"],
+                "max_score": 12.0,
             },
             "D": {
                 "keywords": [
@@ -498,7 +491,6 @@ class MainAgent:
                     "not working", "broken", "failed", "failure",
                     "오류", "버그", "문제", "해결", "디버그",
                     "error handling", "debug issue",
-                    # Document ANALYSIS keywords (not correction)
                     "analyze document", "check document", "validate",
                     "문서 분석", "검증"
                 ],
@@ -507,21 +499,32 @@ class MainAgent:
             },
             "E": {
                 "keywords": [
+                    # **핵심: 문서 경로, 위치, 분류, 이름 관련**
                     "save", "mapping", "relationship", "organize",
                     "저장", "매핑", "관계", "정리",
-                    "save changes", "update mapping", "document management"
+                    "save changes", "update mapping", "document management",
+                    # **새로 추가: 경로/분류 관련 키워드 (높은 우선순위)**
+                    "classification", "location", "path", "directory", "folder",
+                    "wrong path", "wrong location", "incorrect path", "incorrect location",
+                    "should be in", "should move", "incorrect classification",
+                    "rename", "name location", "document path",
+                    "분류", "위치", "경로", "폴더", "디렉토리",
+                    "잘못된 경로", "잘못된 위치", "잘못된 분류",
+                    "이름 변경", "경로 변경", "위치 변경",
+                    # **마이그레이션/구조 관련**
+                    "migration", "migration guide", "reorganize", "relocate",
+                    "folder structure", "directory structure"
                 ],
-                "negative": ["create", "execute", "error"],
-                "max_score": 8.0,
+                "negative": ["create", "execute", "run", "error", "bug"],
+                "max_score": 15.0,  # **E는 높은 가중치**
             },
             "F": {
-                "keywords": [],  # Fallback - no specific keywords
+                "keywords": [],
                 "negative": [],
                 "max_score": 3.0,
             },
         }
         
-        # INDEPENDENT EVALUATION: Each tier gets 0.0~1.0 independently
         independent_scores: Dict[str, float] = {}
         
         for tier, tier_config in tier_keywords.items():
@@ -530,72 +533,74 @@ class MainAgent:
             negative = tier_config["negative"]
             max_score = tier_config["max_score"]
             
-            # Positive keyword matching (1.0 per keyword)
+            # Positive keyword matching
             for keyword in keywords:
                 if keyword in user_input_lower:
                     raw_score += 1.0
             
-            # Negative keyword matching (penalize -0.5 per negative)
+            # Negative keyword matching
             for neg_keyword in negative:
                 if neg_keyword in user_input_lower:
                     raw_score -= 0.5
             
-            # Context-specific bonuses (phrase matching)
-            if tier == "B" and "execute" in user_input_lower and "plan" in user_input_lower:
-                raw_score += 2.0
-            elif tier == "C":
-                # HIGH PRIORITY: Document incorrectly created/wrong path/merge needed
-                if ("incorrectly" in user_input_lower or "잘못" in user_input_lower) and \
-                   ("document" in user_input_lower or "문서" in user_input_lower or "generated" in user_input_lower or "created" in user_input_lower):
-                    raw_score += 4.0  # STRONG signal for Tier C
-                if ("merge" in user_input_lower or "병합" in user_input_lower) and \
-                   ("document" in user_input_lower or "문서" in user_input_lower):
+            # **Tier E 특화: 경로/분류 문제 감지 (높은 보너스)**
+            if tier == "E":
+                # "classification ... location ... path" 패턴 감지
+                if ("classification" in user_input_lower or "분류" in user_input_lower) and \
+                   ("location" in user_input_lower or "path" in user_input_lower or "위치" in user_input_lower or "경로" in user_input_lower):
+                    raw_score += 5.0  # **STRONG signal**
+                
+                # "incorrect/wrong ... path/location/classification" 패턴
+                if ("incorrect" in user_input_lower or "wrong" in user_input_lower or "잘못" in user_input_lower) and \
+                   ("path" in user_input_lower or "location" in user_input_lower or "classification" in user_input_lower or \
+                    "경로" in user_input_lower or "위치" in user_input_lower or "분류" in user_input_lower):
+                    raw_score += 4.0
+                
+                # Migration guide 관련
+                if ("migration" in user_input_lower or "마이그레이션" in user_input_lower) and \
+                   ("guide" in user_input_lower or "path" in user_input_lower or "location" in user_input_lower):
                     raw_score += 3.0
-                if "wrong directory" in user_input_lower or "wrong path" in user_input_lower or "잘못된 경로" in user_input_lower:
-                    raw_score += 3.0
-                if "should be in" in user_input_lower or "should merge" in user_input_lower:
-                    raw_score += 2.5
-            elif tier == "D":
-                # Document analysis (NOT correction) - should score LOWER than C for correction tasks
-                if ("error" in user_input_lower or "debug" in user_input_lower):
-                    raw_score += 1.5
-                # If it's document ANALYSIS (not correction), give moderate score
-                if ("document" in user_input_lower or "문서" in user_input_lower) and \
-                   not ("incorrectly" in user_input_lower or "merge" in user_input_lower or "wrong" in user_input_lower):
-                    raw_score += 1.0
             
-            # Normalize to 0.0~1.0 using tier-specific max_score
+            # **Tier C와의 명확한 구분: WPD(작업 계획) vs 일반 문서**
+            elif tier == "C":
+                # Tier C는 "work plan", "wpd", "task" 등과 함께만 수정으로 인정
+                if ("work plan" in user_input_lower or "wpd" in user_input_lower or "task" in user_input_lower):
+                    # 이미 negative에서 경로/분류 키워드가 제거됨
+                    pass
+                else:
+                    # WPD가 아니면 Tier C 감소
+                    raw_score = max(0, raw_score - 1.0)
+            
+            # Normalize
             normalized_score = min(1.0, max(0.0, raw_score / max_score))
             independent_scores[tier] = normalized_score
         
-        # Find primary tier (highest confidence)
+        # Find primary tier
         primary_tier = max(independent_scores.keys(), key=lambda k: independent_scores[k])
         primary_confidence = independent_scores[primary_tier]
         
-        # Find ALL alternative tiers with valid confidence (>= 0.4)
+        # Find alternatives
         VALID_THRESHOLD = 0.4
         valid_tiers = [
             (tier, conf) for tier, conf in independent_scores.items()
             if conf >= VALID_THRESHOLD and tier != primary_tier
         ]
-        
-        # Sort alternatives by confidence (descending)
         valid_tiers.sort(key=lambda x: x[1], reverse=True)
         
-        # Store alternatives for sequential routing
         self._alternative_tiers = valid_tiers
         
-        # Fallback to Tier F if primary confidence too low
+        # Fallback to F if too low
         if primary_confidence < 0.3:
             primary_tier = "F"
             primary_confidence = independent_scores.get("F", 0.3)
-            self._alternative_tiers = []  # Clear alternatives
+            self._alternative_tiers = []
         
-        print(f"[CLASSIFY] Input: '{user_input}' -> Tier {primary_tier} (confidence: {primary_confidence:.2f})")
+        print(f"[CLASSIFY] Input: '{user_input[:80]}...'")
+        print(f"[CLASSIFY] -> Tier {primary_tier} (confidence: {primary_confidence:.2f})")
         print(f"[CLASSIFY] Independent Scores: {independent_scores}")
         if self._alternative_tiers:
             alt_str = ", ".join([f"{t}({c:.2f})" for t, c in self._alternative_tiers])
-            print(f"[CLASSIFY] Alternative Tiers (>={VALID_THRESHOLD}): {alt_str}")
+            print(f"[CLASSIFY] Alternative Tiers: {alt_str}")
         
         return primary_tier, primary_confidence
 
@@ -681,7 +686,7 @@ class MainAgent:
                 auto_resolve_details = context.payload.get("auto_resolve_details")
                 if auto_resolve_details:
                     print(
-                        f"[MAIN_AGENT] 🤖 Auto-resolve detected: Forcing route to Tier C"
+                        f"[MAIN_AGENT] [AUTO-RESOLVE] Auto-resolve detected: Forcing route to Tier C"
                     )
                     print(
                         f"[MAIN_AGENT]   -> Action: {auto_resolve_details.get('action', 'N/A')}"
@@ -712,7 +717,7 @@ class MainAgent:
         if context.tier == "D" and context.status == "SUCCESS":
             auto_resolve_details = context.payload.get("auto_resolve_details")
             if auto_resolve_details:
-                print(f"[MAIN_AGENT] 🤖 Auto-resolve detected from Tier D analysis")
+                print(f"[MAIN_AGENT] [AUTO-RESOLVE] Auto-resolve detected from Tier D analysis")
                 print(
                     f"[MAIN_AGENT]   -> Action: {auto_resolve_details.get('action', 'N/A')}"
                 )
@@ -745,7 +750,7 @@ class MainAgent:
                         "auto_resolve_confidence", 0.95, labels={"tier": "D"}
                     )
 
-                print(f"[MAIN_AGENT] [OK] Forced routing: D → C (auto-resolve chain)")
+                print(f"[MAIN_AGENT] [OK] Forced routing: D -> C (auto-resolve chain)")
 
         # Apply policy rules
         policy_action = self.policy_engine.evaluate(
@@ -951,8 +956,14 @@ class MainAgent:
                 # Get main function for other tiers
                 main_func = getattr(module, "main")
                 import inspect
+                import os
 
                 sig = inspect.signature(main_func)
+                
+                # Read GitHub settings from environment
+                github_repo_url = os.environ.get("GITHUB_REPO_URL")
+                github_branch = os.environ.get("GITHUB_BRANCH")
+                github_token = os.environ.get("GITHUB_TOKEN")
 
                 # Execute tier module
                 if "previous_payload" in sig.parameters and previous_state:
@@ -964,13 +975,35 @@ class MainAgent:
                         "confidence": previous_state.confidence,
                         "retry_count": previous_state.retry_count,
                     }
-                    state = main_func(
-                        user_input,
-                        workspace_root=self.workspace_root,
-                        previous_payload=prev_payload,
-                    )
+                    
+                    # Check if tier supports GitHub parameters
+                    if "github_repo_url" in sig.parameters:
+                        state = main_func(
+                            user_input,
+                            workspace_root=self.workspace_root,
+                            previous_payload=prev_payload,
+                            github_repo_url=github_repo_url,
+                            github_branch=github_branch,
+                            github_token=github_token,
+                        )
+                    else:
+                        state = main_func(
+                            user_input,
+                            workspace_root=self.workspace_root,
+                            previous_payload=prev_payload,
+                        )
                 else:
-                    state = main_func(user_input, workspace_root=self.workspace_root)
+                    # Check if tier supports GitHub parameters
+                    if "github_repo_url" in sig.parameters:
+                        state = main_func(
+                            user_input, 
+                            workspace_root=self.workspace_root,
+                            github_repo_url=github_repo_url,
+                            github_branch=github_branch,
+                            github_token=github_token,
+                        )
+                    else:
+                        state = main_func(user_input, workspace_root=self.workspace_root)
 
             # Store previous state info
             if previous_state and "previous_state_info" not in state.payload:

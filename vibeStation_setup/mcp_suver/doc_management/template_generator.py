@@ -74,17 +74,17 @@ class TemplateGenerator:
 **Status**: 📋 PENDING
 **Created**: {timestamp}
 
-## 📋 Goal
+## Goal
 
 {description if description else "Define the goal of this work plan."}
 
-## ✅ Success Criteria
+## Success Criteria
 
 1. Define measurable success criteria
 2. List completion requirements
 3. Specify validation methods
 
-## 🔧 Scope
+## Scope
 
 ### In Scope
 - Define what is included in this work plan
@@ -92,7 +92,7 @@ class TemplateGenerator:
 ### Out of Scope
 - Define what is explicitly excluded
 
-## 🔧 Execution Plan
+## Execution Plan
 
 ### Phase {Part_N}.1: [Phase Name]
 
@@ -105,7 +105,7 @@ class TemplateGenerator:
 
 **Expected Output**: [Describe expected output]
 
-## 📝 Implementation Notes
+## Implementation Notes
 
 Implementation details will be added as work progresses.
 
@@ -162,7 +162,7 @@ This document tracks the implementation results for P{Part_N}: {title}.
 
 {wpd_ref}
 
-## 📊 Implementation Progress
+## Implementation Progress
 
 **Overall Progress**: 0%
 
@@ -175,7 +175,7 @@ This document tracks the implementation results for P{Part_N}: {title}.
 ### Pending
 - All tasks from source WPD
 
-## ✅ Validation Results
+## Validation Results
 
 ### Tests Passed
 - None
@@ -186,11 +186,11 @@ This document tracks the implementation results for P{Part_N}: {title}.
 ### Tests Pending
 - All tests
 
-## 📝 Implementation Notes
+## Implementation Notes
 
 Notes will be added as implementation progresses.
 
-## 🔍 Issues Found & Resolutions
+## Issues Found & Resolutions
 
 ### Open Issues
 - None

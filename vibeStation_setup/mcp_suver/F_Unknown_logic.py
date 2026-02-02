@@ -211,7 +211,7 @@ class UnknownLogicHandler:
             user_input: Original user input that couldn't be classified
         """
         if not self.github_reporter.is_enabled():
-            self.log("  ℹ GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)")
+            self.log("GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)")
             return
         
         self.log("   Unclear logic detected. Auto-reporting issue to GitHub...")

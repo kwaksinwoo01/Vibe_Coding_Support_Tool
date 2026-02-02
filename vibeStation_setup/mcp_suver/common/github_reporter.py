@@ -194,10 +194,10 @@ class GitHubReporter:
         try:
             title = "[Agent-Self-Report] Unclear Logic in Node F"
             
-            body = f"""## 🤖 Agent Self-Report: Unclear Logic
+            body = f"""## [AGENT-REPORT] Agent Self-Report: Unclear Logic
 
 **Node**: F (Unknown Logic Handler)
-**Timestamp**: {datetime.now().isoformat()}
+**Timestamp**: {datetime.now().isoformat()}"
 
 ### State Information
 
@@ -277,7 +277,7 @@ After reviewing the task outcome, please:
         try:
             title = f"[Agent-Self-Report] Competing Paths in Node {active_node}"
             
-            body = f"""## 🤖 Agent Self-Report: Competing Paths Decision
+            body = f"""## [AGENT-REPORT] Agent Self-Report: Competing Paths Decision
 
 **Node**: {active_node}
 **Timestamp**: {datetime.now().isoformat()}
@@ -342,7 +342,7 @@ After completing the task, please review:
     ) -> str:
         """Build issue body with all required information"""
         
-        body = f"""## 🤖 Agent Self-Report: Low Confidence Decision
+        body = f"""## [AGENT-REPORT] Agent Self-Report: Low Confidence Decision
 
 **Node**: {active_node}
 **Timestamp**: {datetime.now().isoformat()}

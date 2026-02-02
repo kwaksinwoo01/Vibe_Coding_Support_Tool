@@ -58,7 +58,7 @@ models/
 - ~~`agent_models.py`~~ — **REMOVED** (superseded by `models/core/tier_states.py`)
 - ~~`business_anaalysist.py`~~ — **DEPRECATED** (superseded by 6-tier orchestration)
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Running the Orchestrator
 
@@ -83,7 +83,7 @@ python agent_indexer.py index --root . --db .agent_index/db.sqlite
 python agent_indexer.py query --db .agent_index/db.sqlite --q "search term"
 ```
 
-## 📚 Documentation
+## Documentation
 
 - **`6TIER_IMPLEMENTATION_REPORT.md`** — Implementation status and architecture details
 - **`docs/`** — Additional documentation and specifications
@@ -130,7 +130,7 @@ After the workflow runs it will create a Release and attach the index file as a 
 
 For automation in GitHub Actions, you can also use a workflow step that downloads release assets using actions/download-release-asset or scripts that call the GitHub REST API. Make sure the token you use has `contents: read` permission (or use `GITHUB_TOKEN` provided to the workflow).
 
-## 🔍 Next Steps / Recommendations
+## Next Steps / Recommendations
 
 - Move CI artifacts to a shared cache or object store (S3, GCS) instead of relying on GitHub artifact downloads for production integration.
 - Add an embedding/semantic indexing stage (local model or service) to provide better semantic search results.

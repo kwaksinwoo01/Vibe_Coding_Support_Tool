@@ -21,7 +21,7 @@
 
 **Data Models**: All tiers use lightweight, type-safe tier states from `models/core/tier_states.py`
 
-### 🔗 Execution Flow
+### Execution Flow
 
 ```
 User Input → Language Graph → Tier Classification

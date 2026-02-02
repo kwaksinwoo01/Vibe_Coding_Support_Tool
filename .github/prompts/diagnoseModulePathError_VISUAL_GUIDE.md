@@ -157,21 +157,21 @@ env=os.environ.copy()
 
 ## Common Pitfalls
 
-### ❌ Wrong: Using file path
+### Wrong: Using file path
 
 ```python
 # DON'T DO THIS - won't work when packaged
 subprocess.run([sys.executable, "/path/to/main_agent.py", args])
 ```
 
-### ❌ Wrong: No cwd parameter
+### Wrong: No cwd parameter
 
 ```python
 # DON'T DO THIS - depends on where parent runs from
 subprocess.run([sys.executable, "-m", "module", args])
 ```
 
-### ❌ Wrong: Wrong number of .parent calls
+### Wrong: Wrong number of .parent calls
 
 ```python
 # TOO FEW - still in vibeStation_setup/
@@ -181,7 +181,7 @@ _PROJECT_ROOT = Path(__file__).parent.parent.parent
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
 ```
 
-### ✅ Correct: Module with cwd
+### Correct: Module with cwd
 
 ```python
 # DO THIS - works everywhere, even when packaged

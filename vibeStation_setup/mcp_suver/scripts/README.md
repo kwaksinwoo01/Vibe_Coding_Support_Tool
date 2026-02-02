@@ -164,17 +164,17 @@ Updates mapping table (MP files).
 
 ## Architecture Constraints
 
-### ✅ Follows SRP
+### Follows SRP
 - **This script**: Validation and orchestration only
 - **DocumentManagementEngine**: Facade for document operations
 - **Managers**: Actual document modifications
 
-### ❌ No Adapters/Bridges
+### No Adapters/Bridges
 - Directly uses existing `DocumentManagementEngine` and managers
 - No compatibility shims or translation layers
 - Breaking change approach - clean interfaces
 
-### ✅ Safety First
+### Safety First
 - Default `dry_run=True`
 - Validates payload before execution
 - Returns detailed operation plans

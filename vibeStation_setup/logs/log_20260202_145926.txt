@@ -1,0 +1,773 @@
+[14:58:54] 
+[체크] 사전 요구사항 확인 중...
+[14:58:54] ✓ Agent 모듈(main_agent.py) 번들링됨 (경로 확인 불필요)
+[14:58:57] 
+============================================================
+[14:58:57] [시작] 서버 시작 중...
+[14:58:57]  고정 포트 8000 사용
+[14:58:59] [서버] 포트 8000에서 시작 중...
+[14:58:59] [서버] http://127.0.0.1:8000 리스닝 시작
+[14:59:10] [Agent] 실행: The document classification and name location in docs_2/MIGRATION_GUIDE_v3.1.0.md are incorrect.
+[14:59:24] [Agent 결과]
+Loaded 10 policy rules from c:\Users\user\Documents\github\Vibe_Coding_Support_Tool\vibeStation_setup\mcp_suver\config\decision_policies.json
+[ROUTING_ENGINE] Initialized with strategy: MetricsBasedRoutingStrategy
+
+================================================================================
+[MAIN_AGENT] New Session: 20260202_145910
+[MAIN_AGENT] Input: The document classification and name location in docs_2/MIGRATION_GUIDE_v3.1.0.md are incorrect....
+================================================================================
+
+[CLASSIFY] Input: 'The document classification and name location in docs_2/MIGRATION_GUIDE_v3.1.0.m...'
+[CLASSIFY] -> Tier E (confidence: 1.00)
+[CLASSIFY] Independent Scores: {'A': 0.0, 'B': 0.1, 'C': 0.0, 'D': 0.0, 'E': 1.0, 'F': 0.0}
+[MAIN_AGENT] Classification: Tier E (Document Management)
+[MAIN_AGENT] Confidence: 1.00
+[MAIN_AGENT] [OK] High confidence - proceeding with automatic routing
+
+
+--------------------------------------------------------------------------------
+[MAIN_AGENT] Iteration 1: Tier E
+--------------------------------------------------------------------------------
+[SUCCESS] All doc_management modules imported
+[14:59:10] [INFO] [INIT] Validating previous_payload...
+[14:59:10] [INFO]   - prd_path: None
+[14:59:10] [INFO]   - wpd_sources: 0 items
+[14:59:10] [INFO]   - target_document: N/A
+[14:59:10] [INFO] [INIT] Initializing 9 Document Management Managers...
+[14:59:10] [INFO] [INIT] LinkManager initialized
+[14:59:10] [INFO] [INIT] VersionManager initialized
+[14:59:10] [INFO] [INIT] ChecklistManager initialized
+[14:59:10] [INFO] [INIT] ProgressManager initialized
+[14:59:10] [INFO] [INIT] MappingManager initialized
+[14:59:10] [INFO] [INIT] ErrorSessionManager initialized
+[14:59:10] [INFO] [INIT] MarkdownAutofixManager initialized
+[14:59:10] [INFO] [INIT] DocumentMerger initialized
+[14:59:10] [INFO] [INIT] Initialization complete - proceeding with available managers
+[14:59:10] [INFO] ================================================================================
+[14:59:10] [INFO] TIER E: Document Management - Starting
+[14:59:10] [INFO] ================================================================================
+[14:59:10] [INFO] 
+[NORMAL MODE] Standard document management
+[14:59:10] [INFO] Step 1.0: Extracting Part Number from modified document
+[14:59:10] [INFO] 
+[DOCUMENT DISCOVERY] Searching for document path...
+[14:59:10] [INFO]  Found document path in user input: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:10] [INFO]   Modified document path: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:10] [INFO] 
+[RESOLVE LOCATION] Resolving: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:10] [DEBUG]  Not found in local workspace: docs_2\MIGRATION_GUIDE_v3.1.0.md
+[14:59:10] [INFO]   → Searching in external repository: https://github.com/kwaksinwoo01/turbo-system.git
+[14:59:10] [INFO]     Branch: copilot/remove-property-panel-module
+[14:59:10] [DEBUG]    Not in: turbo-system
+[14:59:10] [INFO]  Found in external repository: C:\Users\user\Documents\github\turbo-system\docs_2\MIGRATION_GUIDE_v3.1.0.md
+[14:59:10] [INFO]  Document resolved to: C:\Users\user\Documents\github\turbo-system\docs_2\MIGRATION_GUIDE_v3.1.0.md
+[14:59:10] [WARN]  Could not extract Part Number from: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:10] [DEBUG]      (Pattern not matched: P(\d+)(?:[.\\/]|\.md))
+[14:59:10] [INFO] [WARNING] Cannot extract Part Number - routing to Tier C
+[14:59:10] [INFO] ================================================================================
+[14:59:10] [INFO] TIER E: Document Management - Completed
+[14:59:10] [INFO] ================================================================================
+
+---AGENT_STATE_DATA---
+{
+  "data": {
+    "tier": "E",
+    "status": "FAILED",
+    "logic_summary": "Insufficient information to route - returning to Tier C for clarification",
+    "next_node": "C",
+    "payload": {},
+    "execution_log": [],
+    "wpd_grade": "L1",
+    "wpd_source_path": "",
+    "execution_time_ms": 0.0,
+    "errors": [
+      "Cannot extract Part Number from modified document"
+    ],
+    "warnings": [],
+    "timestamp": "2026-02-02T05:59:10.419877+00:00",
+    "confidence": 0.5,
+    "decision_trace": [],
+    "retry_count": 0
+  }
+}
+[MAIN_AGENT] Transient failure - retrying after 1000ms (attempt 1/3)
+[SUCCESS] All doc_management modules imported
+[14:59:11] [INFO] [INIT] Validating previous_payload...
+[14:59:11] [INFO]   - prd_path: None
+[14:59:11] [INFO]   - wpd_sources: 0 items
+[14:59:11] [INFO]   - target_document: N/A
+[14:59:11] [INFO] [INIT] Initializing 9 Document Management Managers...
+[14:59:11] [INFO] [INIT] LinkManager initialized
+[14:59:11] [INFO] [INIT] VersionManager initialized
+[14:59:11] [INFO] [INIT] ChecklistManager initialized
+[14:59:11] [INFO] [INIT] ProgressManager initialized
+[14:59:11] [INFO] [INIT] MappingManager initialized
+[14:59:11] [INFO] [INIT] ErrorSessionManager initialized
+[14:59:11] [INFO] [INIT] MarkdownAutofixManager initialized
+[14:59:11] [INFO] [INIT] DocumentMerger initialized
+[14:59:11] [INFO] [INIT] Initialization complete - proceeding with available managers
+[14:59:11] [INFO] ================================================================================
+[14:59:11] [INFO] TIER E: Document Management - Starting
+[14:59:11] [INFO] ================================================================================
+[14:59:11] [INFO] 
+[NORMAL MODE] Standard document management
+[14:59:11] [INFO] Step 1.0: Extracting Part Number from modified document
+[14:59:11] [INFO] 
+[DOCUMENT DISCOVERY] Searching for document path...
+[14:59:11] [INFO]  Found document path in user input: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:11] [INFO]   Modified document path: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:11] [INFO] 
+[RESOLVE LOCATION] Resolving: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:11] [DEBUG]  Not found in local workspace: docs_2\MIGRATION_GUIDE_v3.1.0.md
+[14:59:11] [INFO]   → Searching in external repository: https://github.com/kwaksinwoo01/turbo-system.git
+[14:59:11] [INFO]     Branch: copilot/remove-property-panel-module
+[14:59:11] [DEBUG]    Not in: turbo-system
+[14:59:11] [INFO]  Found in external repository: C:\Users\user\Documents\github\turbo-system\docs_2\MIGRATION_GUIDE_v3.1.0.md
+[14:59:11] [INFO]  Document resolved to: C:\Users\user\Documents\github\turbo-system\docs_2\MIGRATION_GUIDE_v3.1.0.md
+[14:59:11] [WARN]  Could not extract Part Number from: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:11] [DEBUG]      (Pattern not matched: P(\d+)(?:[.\\/]|\.md))
+[14:59:11] [INFO] [WARNING] Cannot extract Part Number - routing to Tier C
+[14:59:11] [INFO] ================================================================================
+[14:59:11] [INFO] TIER E: Document Management - Completed
+[14:59:11] [INFO] ================================================================================
+
+---AGENT_STATE_DATA---
+{
+  "data": {
+    "tier": "E",
+    "status": "FAILED",
+    "logic_summary": "Insufficient information to route - returning to Tier C for clarification",
+    "next_node": "C",
+    "payload": {},
+    "execution_log": [],
+    "wpd_grade": "L1",
+    "wpd_source_path": "",
+    "execution_time_ms": 0.0,
+    "errors": [
+      "Cannot extract Part Number from modified document"
+    ],
+    "warnings": [],
+    "timestamp": "2026-02-02T05:59:11.422120+00:00",
+    "confidence": 0.5,
+    "decision_trace": [],
+    "retry_count": 0
+  }
+}
+[MAIN_AGENT] Transient failure - retrying after 2000ms (attempt 2/3)
+[SUCCESS] All doc_management modules imported
+[14:59:13] [INFO] [INIT] Validating previous_payload...
+[14:59:13] [INFO]   - prd_path: None
+[14:59:13] [INFO]   - wpd_sources: 0 items
+[14:59:13] [INFO]   - target_document: N/A
+[14:59:13] [INFO] [INIT] Initializing 9 Document Management Managers...
+[14:59:13] [INFO] [INIT] LinkManager initialized
+[14:59:13] [INFO] [INIT] VersionManager initialized
+[14:59:13] [INFO] [INIT] ChecklistManager initialized
+[14:59:13] [INFO] [INIT] ProgressManager initialized
+[14:59:13] [INFO] [INIT] MappingManager initialized
+[14:59:13] [INFO] [INIT] ErrorSessionManager initialized
+[14:59:13] [INFO] [INIT] MarkdownAutofixManager initialized
+[14:59:13] [INFO] [INIT] DocumentMerger initialized
+[14:59:13] [INFO] [INIT] Initialization complete - proceeding with available managers
+[14:59:13] [INFO] ================================================================================
+[14:59:13] [INFO] TIER E: Document Management - Starting
+[14:59:13] [INFO] ================================================================================
+[14:59:13] [INFO] 
+[NORMAL MODE] Standard document management
+[14:59:13] [INFO] Step 1.0: Extracting Part Number from modified document
+[14:59:13] [INFO] 
+[DOCUMENT DISCOVERY] Searching for document path...
+[14:59:13] [INFO]  Found document path in user input: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:13] [INFO]   Modified document path: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:13] [INFO] 
+[RESOLVE LOCATION] Resolving: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:13] [DEBUG]  Not found in local workspace: docs_2\MIGRATION_GUIDE_v3.1.0.md
+[14:59:13] [INFO]   → Searching in external repository: https://github.com/kwaksinwoo01/turbo-system.git
+[14:59:13] [INFO]     Branch: copilot/remove-property-panel-module
+[14:59:13] [DEBUG]    Not in: turbo-system
+[14:59:13] [INFO]  Found in external repository: C:\Users\user\Documents\github\turbo-system\docs_2\MIGRATION_GUIDE_v3.1.0.md
+[14:59:13] [INFO]  Document resolved to: C:\Users\user\Documents\github\turbo-system\docs_2\MIGRATION_GUIDE_v3.1.0.md
+[14:59:13] [WARN]  Could not extract Part Number from: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:13] [DEBUG]      (Pattern not matched: P(\d+)(?:[.\\/]|\.md))
+[14:59:13] [INFO] [WARNING] Cannot extract Part Number - routing to Tier C
+[14:59:13] [INFO] ================================================================================
+[14:59:13] [INFO] TIER E: Document Management - Completed
+[14:59:13] [INFO] ================================================================================
+
+---AGENT_STATE_DATA---
+{
+  "data": {
+    "tier": "E",
+    "status": "FAILED",
+    "logic_summary": "Insufficient information to route - returning to Tier C for clarification",
+    "next_node": "C",
+    "payload": {},
+    "execution_log": [],
+    "wpd_grade": "L1",
+    "wpd_source_path": "",
+    "execution_time_ms": 0.0,
+    "errors": [
+      "Cannot extract Part Number from modified document"
+    ],
+    "warnings": [],
+    "timestamp": "2026-02-02T05:59:13.424557+00:00",
+    "confidence": 0.5,
+    "decision_trace": [],
+    "retry_count": 0
+  }
+}
+[MAIN_AGENT] Transient failure - retrying after 4000ms (attempt 3/3)
+[SUCCESS] All doc_management modules imported
+[14:59:17] [INFO] [INIT] Validating previous_payload...
+[14:59:17] [INFO]   - prd_path: None
+[14:59:17] [INFO]   - wpd_sources: 0 items
+[14:59:17] [INFO]   - target_document: N/A
+[14:59:17] [INFO] [INIT] Initializing 9 Document Management Managers...
+[14:59:17] [INFO] [INIT] LinkManager initialized
+[14:59:17] [INFO] [INIT] VersionManager initialized
+[14:59:17] [INFO] [INIT] ChecklistManager initialized
+[14:59:17] [INFO] [INIT] ProgressManager initialized
+[14:59:17] [INFO] [INIT] MappingManager initialized
+[14:59:17] [INFO] [INIT] ErrorSessionManager initialized
+[14:59:17] [INFO] [INIT] MarkdownAutofixManager initialized
+[14:59:17] [INFO] [INIT] DocumentMerger initialized
+[14:59:17] [INFO] [INIT] Initialization complete - proceeding with available managers
+[14:59:17] [INFO] ================================================================================
+[14:59:17] [INFO] TIER E: Document Management - Starting
+[14:59:17] [INFO] ================================================================================
+[14:59:17] [INFO] 
+[NORMAL MODE] Standard document management
+[14:59:17] [INFO] Step 1.0: Extracting Part Number from modified document
+[14:59:17] [INFO] 
+[DOCUMENT DISCOVERY] Searching for document path...
+[14:59:17] [INFO]  Found document path in user input: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:17] [INFO]   Modified document path: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:17] [INFO] 
+[RESOLVE LOCATION] Resolving: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:17] [DEBUG]  Not found in local workspace: docs_2\MIGRATION_GUIDE_v3.1.0.md
+[14:59:17] [INFO]   → Searching in external repository: https://github.com/kwaksinwoo01/turbo-system.git
+[14:59:17] [INFO]     Branch: copilot/remove-property-panel-module
+[14:59:17] [DEBUG]    Not in: turbo-system
+[14:59:17] [INFO]  Found in external repository: C:\Users\user\Documents\github\turbo-system\docs_2\MIGRATION_GUIDE_v3.1.0.md
+[14:59:17] [INFO]  Document resolved to: C:\Users\user\Documents\github\turbo-system\docs_2\MIGRATION_GUIDE_v3.1.0.md
+[14:59:17] [WARN]  Could not extract Part Number from: docs_2/MIGRATION_GUIDE_v3.1.0.md
+[14:59:17] [DEBUG]      (Pattern not matched: P(\d+)(?:[.\\/]|\.md))
+[14:59:17] [INFO] [WARNING] Cannot extract Part Number - routing to Tier C
+[14:59:17] [INFO] ================================================================================
+[14:59:17] [INFO] TIER E: Document Management - Completed
+[14:59:17] [INFO] ================================================================================
+
+---AGENT_STATE_DATA---
+{
+  "data": {
+    "tier": "E",
+    "status": "FAILED",
+    "logic_summary": "Insufficient information to route - returning to Tier C for clarification",
+    "next_node": "C",
+    "payload": {},
+    "execution_log": [],
+    "wpd_grade": "L1",
+    "wpd_source_path": "",
+    "execution_time_ms": 0.0,
+    "errors": [
+      "Cannot extract Part Number from modified document"
+    ],
+    "warnings": [],
+    "timestamp": "2026-02-02T05:59:17.427006+00:00",
+    "confidence": 0.5,
+    "decision_trace": [],
+    "retry_count": 0
+  }
+}
+[MAIN_AGENT] Max retries (3) reached for Tier E
+[MAIN_AGENT] Result: FAILED
+[MAIN_AGENT] Summary: Insufficient information to route - returning to Tier C for clarification...
+[MAIN_AGENT] Confidence: 0.50
+[METRICS_ROUTING] Dynamic confidence threshold: 0.80 (based on 4 executions, success rate: 0.00%)
+[MAIN_AGENT]  Human approval requested (confidence: 0.00)
+[MAIN_AGENT]  Confidence too low (0.00 < 0.7), attempting system retry...
+
+[HUMAN_RETRY] Cycle 1/2: Attempting system-manageable tasks before requesting human input
+[ALTERNATIVE_ROUTING] Available alternatives (after circuit breaker filter): ['F']
+[HUMAN_RETRY] Cycle 1: Attempting Tier F
+[14:59:17] ================================================================================
+[14:59:17] TIER F: Unknown Logic Handler - Starting
+[14:59:17] ================================================================================
+[14:59:17] Analyzing user input: System retry: Execute Tier F as alternative path...
+[14:59:17] Classified input as Tier B (confidence: 0.11)
+[14:59:17] Requesting user clarification
+[14:59:17] GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)
+[14:59:17] ================================================================================
+[14:59:17] TIER F: Unknown Logic Handler - Completed
+[14:59:17] ================================================================================
+
+---AGENT_STATE_DATA---
+{
+  "data": {
+    "tier": "F",
+    "status": "PENDING",
+    "logic_summary": "Unable to automatically classify your request. Please specify one of the following:\n- 'Create plan' (Tier A) - Create a new work plan\n- 'Execute plan' (Tier B) - Execute existing plan\n- 'Modify plan' (Tier C) - Change/edit a plan\n- 'Analyze issue' (Tier D) - Debug/fix an error\n- 'Save changes' (Tier E) - Document management",
+    "next_node": null,
+    "payload": {
+      "user_request": "System retry: Execute Tier F as alternative path",
+      "classification_results": {},
+      "suggested_tier": "B",
+      "confidence_score": 0.1111111111111111,
+      "classification_reasoning": "Matched 1 keywords for Tier B",
+      "routed_to_tier": null,
+      "routing_successful": false,
+      "requires_clarification": false,
+      "clarification_questions": [],
+      "fallback_action": ""
+    },
+    "execution_log": [
+      "[14:59:17] ================================================================================",
+      "[14:59:17] TIER F: Unknown Logic Handler - Starting",
+      "[14:59:17] ================================================================================",
+      "[14:59:17] Analyzing user input: System retry: Execute Tier F as alternative path...",
+      "[14:59:17] Classified input as Tier B (confidence: 0.11)",
+      "[14:59:17] Requesting user clarification",
+      "[14:59:17] GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)",
+      "[14:59:17] ================================================================================",
+      "[14:59:17] TIER F: Unknown Logic Handler - Completed",
+      "[14:59:17] ================================================================================"
+    ],
+    "wpd_grade": "L1",
+    "wpd_source_path": "",
+    "execution_time_ms": 0.0,
+    "errors": [],
+    "warnings": [
+      "Input classification uncertain - clarification needed"
+    ],
+    "timestamp": "2026-02-02T05:59:17.435257+00:00",
+    "confidence": 0.5,
+    "decision_trace": [],
+    "retry_count": 0
+  }
+}
+[MAIN_AGENT] Transient failure - retrying after 1000ms (attempt 1/3)
+[14:59:18] ================================================================================
+[14:59:18] TIER F: Unknown Logic Handler - Starting
+[14:59:18] ================================================================================
+[14:59:18] Analyzing user input: System retry: Execute Tier F as alternative path...
+[14:59:18] Classified input as Tier B (confidence: 0.11)
+[14:59:18] Requesting user clarification
+[14:59:18] GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)
+[14:59:18] ================================================================================
+[14:59:18] TIER F: Unknown Logic Handler - Completed
+[14:59:18] ================================================================================
+
+---AGENT_STATE_DATA---
+{
+  "data": {
+    "tier": "F",
+    "status": "PENDING",
+    "logic_summary": "Unable to automatically classify your request. Please specify one of the following:\n- 'Create plan' (Tier A) - Create a new work plan\n- 'Execute plan' (Tier B) - Execute existing plan\n- 'Modify plan' (Tier C) - Change/edit a plan\n- 'Analyze issue' (Tier D) - Debug/fix an error\n- 'Save changes' (Tier E) - Document management",
+    "next_node": null,
+    "payload": {
+      "user_request": "System retry: Execute Tier F as alternative path",
+      "classification_results": {},
+      "suggested_tier": "B",
+      "confidence_score": 0.1111111111111111,
+      "classification_reasoning": "Matched 1 keywords for Tier B",
+      "routed_to_tier": null,
+      "routing_successful": false,
+      "requires_clarification": false,
+      "clarification_questions": [],
+      "fallback_action": ""
+    },
+    "execution_log": [
+      "[14:59:18] ================================================================================",
+      "[14:59:18] TIER F: Unknown Logic Handler - Starting",
+      "[14:59:18] ================================================================================",
+      "[14:59:18] Analyzing user input: System retry: Execute Tier F as alternative path...",
+      "[14:59:18] Classified input as Tier B (confidence: 0.11)",
+      "[14:59:18] Requesting user clarification",
+      "[14:59:18] GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)",
+      "[14:59:18] ================================================================================",
+      "[14:59:18] TIER F: Unknown Logic Handler - Completed",
+      "[14:59:18] ================================================================================"
+    ],
+    "wpd_grade": "L1",
+    "wpd_source_path": "",
+    "execution_time_ms": 0.0,
+    "errors": [],
+    "warnings": [
+      "Input classification uncertain - clarification needed"
+    ],
+    "timestamp": "2026-02-02T05:59:18.441471+00:00",
+    "confidence": 0.5,
+    "decision_trace": [],
+    "retry_count": 0
+  }
+}
+[MAIN_AGENT] Transient failure - retrying after 2000ms (attempt 2/3)
+[14:59:20] ================================================================================
+[14:59:20] TIER F: Unknown Logic Handler - Starting
+[14:59:20] ================================================================================
+[14:59:20] Analyzing user input: System retry: Execute Tier F as alternative path...
+[14:59:20] Classified input as Tier B (confidence: 0.11)
+[14:59:20] Requesting user clarification
+[14:59:20] GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)
+[14:59:20] ================================================================================
+[14:59:20] TIER F: Unknown Logic Handler - Completed
+[14:59:20] ================================================================================
+
+---AGENT_STATE_DATA---
+{
+  "data": {
+    "tier": "F",
+    "status": "PENDING",
+    "logic_summary": "Unable to automatically classify your request. Please specify one of the following:\n- 'Create plan' (Tier A) - Create a new work plan\n- 'Execute plan' (Tier B) - Execute existing plan\n- 'Modify plan' (Tier C) - Change/edit a plan\n- 'Analyze issue' (Tier D) - Debug/fix an error\n- 'Save changes' (Tier E) - Document management",
+    "next_node": null,
+    "payload": {
+      "user_request": "System retry: Execute Tier F as alternative path",
+      "classification_results": {},
+      "suggested_tier": "B",
+      "confidence_score": 0.1111111111111111,
+      "classification_reasoning": "Matched 1 keywords for Tier B",
+      "routed_to_tier": null,
+      "routing_successful": false,
+      "requires_clarification": false,
+      "clarification_questions": [],
+      "fallback_action": ""
+    },
+    "execution_log": [
+      "[14:59:20] ================================================================================",
+      "[14:59:20] TIER F: Unknown Logic Handler - Starting",
+      "[14:59:20] ================================================================================",
+      "[14:59:20] Analyzing user input: System retry: Execute Tier F as alternative path...",
+      "[14:59:20] Classified input as Tier B (confidence: 0.11)",
+      "[14:59:20] Requesting user clarification",
+      "[14:59:20] GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)",
+      "[14:59:20] ================================================================================",
+      "[14:59:20] TIER F: Unknown Logic Handler - Completed",
+      "[14:59:20] ================================================================================"
+    ],
+    "wpd_grade": "L1",
+    "wpd_source_path": "",
+    "execution_time_ms": 0.0,
+    "errors": [],
+    "warnings": [
+      "Input classification uncertain - clarification needed"
+    ],
+    "timestamp": "2026-02-02T05:59:20.443498+00:00",
+    "confidence": 0.5,
+    "decision_trace": [],
+    "retry_count": 0
+  }
+}
+[MAIN_AGENT] Transient failure - retrying after 4000ms (attempt 3/3)
+[14:59:24] ================================================================================
+[14:59:24] TIER F: Unknown Logic Handler - Starting
+[14:59:24] ================================================================================
+[14:59:24] Analyzing user input: System retry: Execute Tier F as alternative path...
+[14:59:24] Classified input as Tier B (confidence: 0.11)
+[14:59:24] Requesting user clarification
+[14:59:24] GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)
+[14:59:24] ================================================================================
+[14:59:24] TIER F: Unknown Logic Handler - Completed
+[14:59:24] ================================================================================
+
+---AGENT_STATE_DATA---
+{
+  "data": {
+    "tier": "F",
+    "status": "PENDING",
+    "logic_summary": "Unable to automatically classify your request. Please specify one of the following:\n- 'Create plan' (Tier A) - Create a new work plan\n- 'Execute plan' (Tier B) - Execute existing plan\n- 'Modify plan' (Tier C) - Change/edit a plan\n- 'Analyze issue' (Tier D) - Debug/fix an error\n- 'Save changes' (Tier E) - Document management",
+    "next_node": null,
+    "payload": {
+      "user_request": "System retry: Execute Tier F as alternative path",
+      "classification_results": {},
+      "suggested_tier": "B",
+      "confidence_score": 0.1111111111111111,
+      "classification_reasoning": "Matched 1 keywords for Tier B",
+      "routed_to_tier": null,
+      "routing_successful": false,
+      "requires_clarification": false,
+      "clarification_questions": [],
+      "fallback_action": ""
+    },
+    "execution_log": [
+      "[14:59:24] ================================================================================",
+      "[14:59:24] TIER F: Unknown Logic Handler - Starting",
+      "[14:59:24] ================================================================================",
+      "[14:59:24] Analyzing user input: System retry: Execute Tier F as alternative path...",
+      "[14:59:24] Classified input as Tier B (confidence: 0.11)",
+      "[14:59:24] Requesting user clarification",
+      "[14:59:24] GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)",
+      "[14:59:24] ================================================================================",
+      "[14:59:24] TIER F: Unknown Logic Handler - Completed",
+      "[14:59:24] ================================================================================"
+    ],
+    "wpd_grade": "L1",
+    "wpd_source_path": "",
+    "execution_time_ms": 0.0,
+    "errors": [],
+    "warnings": [
+      "Input classification uncertain - clarification needed"
+    ],
+    "timestamp": "2026-02-02T05:59:24.445614+00:00",
+    "confidence": 0.5,
+    "decision_trace": [],
+    "retry_count": 0
+  }
+}
+[MAIN_AGENT] Max retries (3) reached for Tier F
+[HUMAN_RETRY] Cycle 1: No system tasks were successful
+[HUMAN_RETRY] Exhausted 1 cycles. Entering async wait for human input.
+[HUMAN_QUEUE] Enqueued decision 20260202_145910_1
+[MAIN_AGENT] -> Queued for async human decision (ID: 20260202_145910_1)
+[MAIN_AGENT] -> Continuing with non-blocking tasks...
+
+================================================================================
+[MAIN_AGENT] Session Complete: 20260202_145910
+[MAIN_AGENT] Total Iterations: 1
+[MAIN_AGENT] Final Status: FAILED
+================================================================================
+
+
+================================================================================
+EXECUTION SUMMARY
+================================================================================
+1. Tier E -> FAILED (Confidence: 0.50, Retries: 0, Next: C)
+2. Tier E -> FAILED (Confidence: 0.50, Retries: 0, Next: C)
+3. Tier E -> FAILED (Confidence: 0.50, Retries: 0, Next: C)
+4. Tier E -> FAILED (Confidence: 0.50, Retries: 0, Next: C)
+5. Tier F -> PENDING (Confidence: 0.50, Retries: 0, Next: STOP)
+6. Tier F -> PENDING (Confidence: 0.50, Retries: 0, Next: STOP)
+7. Tier F -> PENDING (Confidence: 0.50, Retries: 0, Next: STOP)
+8. Tier F -> PENDING (Confidence: 0.50, Retries: 0, Next: STOP)
+================================================================================
+
+
+================================================================================
+METRICS SUMMARY
+================================================================================
+{
+  "timestamp": "2026-02-02T14:59:24.446044",
+  "counters": [
+    {
+      "name": "automatic_routing_executed",
+      "value": 1.0,
+      "labels": {
+        "tier": "E"
+      }
+    },
+    {
+      "name": "decision_required_total",
+      "value": 1.0,
+      "labels": {
+        "tier": "E"
+      }
+    },
+    {
+      "name": "policy_evaluated_total",
+      "value": 1.0,
+      "labels": {
+        "policy": "routing_policy",
+        "matched": "True"
+      }
+    },
+    {
+      "name": "retry_attempted_total",
+      "value": 3.0,
+      "labels": {
+        "tier": "E"
+      }
+    },
+    {
+      "name": "retry_attempted_total",
+      "value": 3.0,
+      "labels": {
+        "tier": "F"
+      }
+    },
+    {
+      "name": "retry_exhausted_total",
+      "value": 1.0,
+      "labels": {
+        "tier": "E"
+      }
+    },
+    {
+      "name": "retry_exhausted_total",
+      "value": 1.0,
+      "labels": {
+        "tier": "F"
+      }
+    },
+    {
+      "name": "tier_execution_total",
+      "value": 4.0,
+      "labels": {
+        "tier": "E",
+        "status": "FAILED"
+      }
+    },
+    {
+      "name": "tier_execution_total",
+      "value": 4.0,
+      "labels": {
+        "tier": "F",
+        "status": "PENDING"
+      }
+    }
+  ],
+  "gauges": [
+    {
+      "name": "current_retry_count",
+      "value": 3,
+      "labels": {
+        "tier": "E"
+      }
+    },
+    {
+      "name": "current_retry_count",
+      "value": 3,
+      "labels": {
+        "tier": "F"
+      }
+    },
+    {
+      "name": "routing_confidence",
+      "value": 0.0,
+      "labels": {
+        "tier": "E"
+      }
+    }
+  ],
+  "histograms": [
+    {
+      "name": "routing_confidence_distribution",
+      "labels": {
+        "tier": "E"
+      },
+      "count": 4,
+      "sum": 2.0,
+      "avg": 0.5,
+      "min": 0.5,
+      "max": 0.5,
+      "p50": 0.5,
+      "p95": 0.5,
+      "p99": 0.5
+    },
+    {
+      "name": "routing_confidence_distribution",
+      "labels": {
+        "tier": "F"
+      },
+      "count": 4,
+      "sum": 2.0,
+      "avg": 0.5,
+      "min": 0.5,
+      "max": 0.5,
+      "p50": 0.5,
+      "p95": 0.5,
+      "p99": 0.5
+    },
+    {
+      "name": "tier_execution_duration_ms",
+      "labels": {
+        "tier": "E",
+        "status": "FAILED"
+      },
+      "count": 4,
+      "sum": 71.91681861877441,
+      "avg": 17.979204654693604,
+      "min": 2.0928382873535156,
+      "max": 65.31548500061035,
+      "p50": 2.2559165954589844,
+      "p95": 65.31548500061035,
+      "p99": 65.31548500061035
+    },
+    {
+      "name": "tier_execution_duration_ms",
+      "labels": {
+        "tier": "F",
+        "status": "PENDING"
+      },
+      "count": 4,
+      "sum": 14.538764953613281,
+      "avg": 3.6346912384033203,
+      "min": 1.2955665588378906,
+      "max": 8.251428604125977,
+      "p50": 2.9768943786621094,
+      "p95": 8.251428604125977,
+      "p99": 8.251428604125977
+    }
+  ],
+  "summary": {
+    "total_counters": 9,
+    "total_gauges": 3,
+    "total_histograms": 4,
+    "total_history_points": 42,
+    "history_size_limit": 10000
+  }
+}
+================================================================================
+
+
+================================================================================
+FINAL AGENT STATE
+================================================================================
+
+---AGENT_STATE_DATA---
+{
+  "data": {
+    "tier": "E",
+    "status": "FAILED",
+    "logic_summary": "Insufficient information to route - returning to Tier C for clarification",
+    "next_node": "C",
+    "payload": {},
+    "execution_log": [],
+    "wpd_grade": "L1",
+    "wpd_source_path": "",
+    "execution_time_ms": 2.2559165954589844,
+    "errors": [
+      "Cannot extract Part Number from modified document"
+    ],
+    "warnings": [],
+    "timestamp": "2026-02-02T05:59:17.427006+00:00",
+    "confidence": 0.5,
+    "decision_trace": [
+      {
+        "type": "tier_execution",
+        "timestamp": "2026-02-02T05:59:17.427127+00:00",
+        "details": {
+          "tier": "E",
+          "status": "FAILED",
+          "iteration": 1,
+          "retry_count": 3
+        }
+      },
+      {
+        "type": "routing",
+        "timestamp": "2026-02-02T05:59:17.427243+00:00",
+        "details": {
+          "next_tier": "C",
+          "confidence": 0.0,
+          "confidence_level": "VERY_LOW",
+          "reasoning": "Routing decision based on: execution failed, retry attempt 3, low confidence",
+          "decision_factors": {
+            "has_retry_capacity": false,
+            "within_budget": true,
+            "has_failures": false,
+            "execution_slow": false,
+            "status_success": false,
+            "status_failed": true,
+            "status_partial": false
+          },
+          "requires_human_approval": true,
+          "requires_retry": false,
+          "retry_delay_ms": 0,
+          "failure_type": null,
+          "fallback_tier": null,
+          "estimated_cost": 0.0,
+          "timestamp": "2026-02-02T14:59:17.427207"
+        }
+      }
+    ],
+    "retry_count": 3
+  }
+}

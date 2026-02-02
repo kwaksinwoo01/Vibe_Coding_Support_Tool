@@ -100,7 +100,7 @@ class IssueAnalysisEngine:
             Formatted feedback summary string (also cached in self.feedback_context)
         """
         if not self.github_reporter.is_enabled():
-            self.log("  ℹ Feedback loading disabled (GitHub reporter not enabled)")
+            self.log("Feedback loading disabled (GitHub reporter not enabled)")
             return "No feedback context available (GitHub reporter disabled)."
         
         self.log(f"Loading feedback context from closed issues (max: {max_issues})...")
@@ -289,7 +289,7 @@ class IssueAnalysisEngine:
                 self.log(f"  → Auto-resolve action: {auto_resolve_details['action']}")
                 self.log(f"  → Target file: {auto_resolve_details['target_file'] or 'N/A'}")
             else:
-                self.log(f"  ℹ Not auto-resolvable: manual intervention may be required")
+                self.log(f"Not auto-resolvable: manual intervention may be required")
                 auto_resolve_details = None
             
             agent_state = AgentState(
@@ -356,7 +356,7 @@ class IssueAnalysisEngine:
             user_input: Original user input that triggered the analysis
         """
         if not self.github_reporter.is_enabled():
-            self.log("  ℹ GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)")
+            self.log("GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)")
             return
         
         routing_info = tier_d_state.get("routing_info")

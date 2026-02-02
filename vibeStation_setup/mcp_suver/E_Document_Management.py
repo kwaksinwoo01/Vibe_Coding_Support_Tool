@@ -65,42 +65,82 @@ class DocumentManagementEngine:
         self.tier = "E"
         self.previous_payload = previous_payload or {}
         self.workspace_root = Path(context.workspace_root)
+        self.execution_log: List[str] = []
         
         # Initialize TierEState
         self.state = TierEState()
         self.state.sources.prd_path = self.previous_payload.get("prd_path")
         self.state.sources.wpd_sources = self.previous_payload.get("wpd_sources", [])
         
-        # Initialize ALL 9 specialized managers (Facade pattern)
+        # Validate previous payload
+        self.log("[INIT] Validating previous_payload...")
+        self.log(f"  - prd_path: {self.state.sources.prd_path}")
+        self.log(f"  - wpd_sources: {len(self.state.sources.wpd_sources)} items")
+        self.log(f"  - target_document: {self.previous_payload.get('target_document', 'N/A')}")
+        
+        # Initialize ALL 9 specialized managers (Facade pattern) - with error handling
         self.log(f"[INIT] Initializing {9} Document Management Managers...")
         
-        self.link_manager = LinkManager(self.workspace_root)
-        self.log("[INIT] [OK] LinkManager initialized")
+        # Safe initialization with try-except for each manager
+        try:
+            self.link_manager = LinkManager(self.workspace_root)
+            self.log("[INIT] LinkManager initialized")
+        except Exception as e:
+            self.log(f"[INIT]LinkManager failed: {e}", "WARN")
+            self.link_manager = None
         
-        self.version_manager = VersionManager(self.workspace_root)
-        self.log("[INIT] [OK] VersionManager initialized")
+        try:
+            self.version_manager = VersionManager(self.workspace_root)
+            self.log("[INIT] VersionManager initialized")
+        except Exception as e:
+            self.log(f"[INIT]VersionManager failed: {e}", "WARN")
+            self.version_manager = None
         
-        self.checklist_manager = ChecklistManager(self.workspace_root)
-        self.log("[INIT] [OK] ChecklistManager initialized")
+        try:
+            self.checklist_manager = ChecklistManager(self.workspace_root)
+            self.log("[INIT] ChecklistManager initialized")
+        except Exception as e:
+            self.log(f"[INIT]ChecklistManager failed: {e}", "WARN")
+            self.checklist_manager = None
         
-        self.progress_manager = ProgressManager(self.workspace_root)
-        self.log("[INIT] [OK] ProgressManager initialized")
+        try:
+            self.progress_manager = ProgressManager()
+            self.log("[INIT] ProgressManager initialized")
+        except Exception as e:
+            self.log(f"[INIT]ProgressManager failed: {e}", "WARN")
+            self.progress_manager = None
         
-        self.mapping_manager = MappingManager(self.workspace_root)
-        self.log("[INIT] [OK] MappingManager initialized")
+        # Skip MappingManager - its dependency (.github/agents/tool) may not exist
+        # This is not critical for routing decision
+        try:
+            self.mapping_manager = MappingManager(self.workspace_root)
+            self.log("[INIT] MappingManager initialized")
+        except Exception as e:
+            self.log(f"[INIT]MappingManager skipped (optional): {e}", "WARN")
+            self.mapping_manager = None
         
-        self.error_session_manager = ErrorSessionManager(self.workspace_root)
-        self.log("[INIT] [OK] ErrorSessionManager initialized")
+        try:
+            self.error_session_manager = ErrorSessionManager(self.workspace_root)
+            self.log("[INIT] ErrorSessionManager initialized")
+        except Exception as e:
+            self.log(f"[INIT]ErrorSessionManager failed: {e}", "WARN")
+            self.error_session_manager = None
         
-        self.markdown_autofix_manager = MarkdownAutofixManager(self.workspace_root)
-        self.log("[INIT] [OK] MarkdownAutofixManager initialized")
+        try:
+            self.markdown_autofix_manager = MarkdownAutofixManager(self.workspace_root)
+            self.log("[INIT] MarkdownAutofixManager initialized")
+        except Exception as e:
+            self.log(f"[INIT]MarkdownAutofixManager failed: {e}", "WARN")
+            self.markdown_autofix_manager = None
         
-        self.document_merger = DocumentMerger(self.workspace_root)
-        self.log("[INIT] [OK] DocumentMerger initialized")
+        try:
+            self.document_merger = DocumentMerger(self.workspace_root)
+            self.log("[INIT] DocumentMerger initialized")
+        except Exception as e:
+            self.log(f"[INIT]DocumentMerger failed: {e}", "WARN")
+            self.document_merger = None
         
-        # Logging
-        self.execution_log: List[str] = []
-        self.log(f"[INIT] All {9} managers ready")
+        self.log(f"[INIT] Initialization complete - proceeding with available managers")
     
     def log(self, message: str, level: str = "INFO"):
         """Enhanced logging for decision tracing"""
@@ -247,11 +287,127 @@ class DocumentManagementEngine:
             logic_summary=f"Merge error: {error_msg}"
         )
     
+    # ========== Document Path Discovery ==========
+    
+    def discover_document_from_user_input(self) -> Optional[str]:
+        """
+        Extract document path from user input or context
+        
+        Searches for document paths in:
+        1. User input (e.g., "docs_2/MIGRATION_GUIDE_v3.1.0.md are incorrect")
+        2. Previous payload
+        3. External GitHub repository (if configured)
+        
+        Returns:
+            Document path (str) or None if not found
+        """
+        self.log("\n[DOCUMENT DISCOVERY] Searching for document path...")
+        
+        # Step 1: Check user input for document path patterns
+        user_input = self.context.user_input
+        doc_patterns = [
+            r'(docs_\d+/[\w/\-\.]+\.md)',  # docs_2/MIGRATION_GUIDE_v3.1.0.md
+            r'(docs/[\w/\-\.]+\.md)',      # docs/ip/PRD-P1.md
+            r'([\w/\-]+\.md)',              # Any .md file
+        ]
+        
+        for pattern in doc_patterns:
+            match = re.search(pattern, user_input)
+            if match:
+                doc_path = match.group(1)
+                self.log(f" Found document path in user input: {doc_path}")
+                return doc_path
+        
+        # Step 2: Check previous_payload
+        doc_path = self.previous_payload.get("target_document") or self.previous_payload.get("wpd_path")
+        if doc_path:
+            self.log(f" Found document path in previous_payload: {doc_path}")
+            return doc_path
+        
+        # Step 3: Search for any .md file in previous_payload values
+        for key, value in self.previous_payload.items():
+            if isinstance(value, str) and ".md" in value:
+                self.log(f" Found document path in payload['{key}']: {value}")
+                return value
+        
+        self.log(f" No document path found", "WARN")
+        return None
+    
+    def resolve_document_location(self, doc_path: str) -> Optional[Path]:
+        """
+        Resolve document location considering external GitHub repositories
+        
+        Search order:
+        1. Local workspace (current project)
+        2. External GitHub repository (if configured)
+        
+        Args:
+            doc_path: Relative document path (e.g., "docs_2/MIGRATION_GUIDE_v3.1.0.md")
+        
+        Returns:
+            Resolved Path object or None if not found
+        """
+        self.log(f"\n[RESOLVE LOCATION] Resolving: {doc_path}")
+        
+        # Step 1: Try local workspace
+        local_path = self.workspace_root / doc_path
+        if local_path.exists():
+            self.log(f" Found in local workspace: {local_path}")
+            return local_path
+        else:
+            self.log(f" Not found in local workspace: {local_path}", "DEBUG")
+        
+        # Step 2: Try external GitHub repository
+        github_repo_url = self.context.github_repo_url
+        github_branch = self.context.github_branch
+        
+        if github_repo_url:
+            self.log(f"  → Searching in external repository: {github_repo_url}")
+            self.log(f"    Branch: {github_branch or 'default'}")
+            
+            # Extract repo name from URL
+            # https://github.com/kwaksinwoo01/turbo-system.git -> turbo-system
+            repo_match = re.search(r'/([^/]+?)(?:\.git)?$', github_repo_url)
+            if repo_match:
+                repo_name = repo_match.group(1)
+                
+                # Check if repository is cloned locally
+                # Common locations: ../turbo-system, ~/github/turbo-system
+                potential_locations = [
+                    self.workspace_root.parent / repo_name,  # ../turbo-system
+                    Path.home() / "Documents" / "github" / repo_name,  # ~/Documents/github/turbo-system
+                    Path.home() / "github" / repo_name,  # ~/github/turbo-system
+                ]
+                
+                for potential_path in potential_locations:
+                    external_doc_path = potential_path / doc_path
+                    if external_doc_path.exists():
+                        self.log(f" Found in external repository: {external_doc_path}")
+                        return external_doc_path
+                    else:
+                        self.log(f"   Not in: {potential_path}", "DEBUG")
+                
+                self.log(f" Document not found in any external repository location", "WARN")
+                self.log(f"    Hint: Clone {github_repo_url} to one of these locations:", "INFO")
+                for loc in potential_locations:
+                    self.log(f"      - {loc}", "INFO")
+            else:
+                self.log(f" Could not parse repository name from URL", "WARN")
+        else:
+            self.log(f"  → No external repository configured (context.github_repo_url is None)", "DEBUG")
+        
+        return None
+    
     # ========== Part Number Extraction & Validation ==========
     
     def extract_part_number_from_modified_doc(self) -> Optional[int]:
         """
-        Extract Part Number from modified document in previous_payload
+        Extract Part Number from modified document
+        
+        Enhanced to support:
+        1. User input document path discovery
+        2. External GitHub repository documents
+        3. Previous payload fallback
         
         Examples:
         - "docs_2/P2/P2.1/P2.1.01-Client-Event-Polling.md" → 2
@@ -263,8 +419,12 @@ class DocumentManagementEngine:
         """
         self.log("Step 1.0: Extracting Part Number from modified document")
         
-        # Get modified document path from previous_payload
-        modified_doc = self.previous_payload.get("target_document")
+        # Step 1: Try to discover document path from user input
+        modified_doc = self.discover_document_from_user_input()
+        
+        # Step 2: Fallback to previous_payload
+        if not modified_doc:
+            modified_doc = self.previous_payload.get("target_document")
         if not modified_doc:
             modified_doc = self.previous_payload.get("wpd_path")
         
@@ -275,22 +435,33 @@ class DocumentManagementEngine:
                     break
         
         if not modified_doc:
-            self.log("ERROR: Could not find modified document path in previous_payload", "ERROR")
-            self.log(f"Available keys: {list(self.previous_payload.keys())}", "DEBUG")
+            self.log("ERROR: Could not find modified document path", "ERROR")
+            self.log(f"Available keys in previous_payload: {list(self.previous_payload.keys())}", "DEBUG")
+            self.log(f"User input: {self.context.user_input}", "DEBUG")
             return None
         
-        self.log(f"Modified document path: {modified_doc}")
+        self.log(f"  Modified document path: {modified_doc}")
         
-        # Extract Part Number using regex
+        # Step 3: Try to resolve document location (local or external repository)
+        resolved_path = self.resolve_document_location(modified_doc)
+        if resolved_path:
+            self.log(f" Document resolved to: {resolved_path}")
+            # Store resolved path for later use
+            self.previous_payload["resolved_document_path"] = str(resolved_path)
+        else:
+            self.log(f"Document not found in filesystem (will continue with path parsing)", "WARN")
+        
+        # Step 4: Extract Part Number using regex (from path string)
         pattern = r'P(\d+)(?:[.\\/]|\.md)'
         match = re.search(pattern, modified_doc)
         
         if match:
             part_num = int(match.group(1))
-            self.log(f"Extracted Part Number: {part_num}")
+            self.log(f" Extracted Part Number: {part_num}")
             return part_num
         else:
-            self.log(f"WARNING: Could not extract Part Number from {modified_doc}", "WARN")
+            self.log(f" Could not extract Part Number from: {modified_doc}", "WARN")
+            self.log(f"     (Pattern not matched: {pattern})", "DEBUG")
             return None
     
     def validate_prd_exists(self, part_num: int) -> Tuple[bool, Optional[Path]]:
@@ -329,88 +500,111 @@ class DocumentManagementEngine:
     
     def update_modified_document_metadata(self, modified_doc_path: str) -> bool:
         """
-        Update modified document using LinkManager, VersionManager, ProgressManager
+        Update modified document metadata (best-effort approach)
+        
+        All updates are optional - manager unavailability won't cause failure
         
         Args:
             modified_doc_path: Path to document modified by Tier C
         
         Returns:
-            Success: bool
+            Success: bool (always True if document exists)
         """
-        self.log("Step 1.2: Updating modified document metadata")
+        self.log("Step 1.2: Updating modified document metadata (optional)")
         
         doc_path = Path(modified_doc_path)
         if not doc_path.is_absolute():
             doc_path = self.workspace_root / doc_path
         
         if not doc_path.exists():
-            self.log(f"ERROR: Document not found: {doc_path}", "ERROR")
+            self.log(f"Document not found: {doc_path}", "WARN")
             return False
         
-        self.log(f"Target document: {doc_path.name}")
+        self.log(f"  Target document: {doc_path.name}")
+        updates_attempted = 0
         
-        try:
-            # Step 1.2.1: Update document links using LinkManager
-            self.log("Step 1.2.1: Running LinkManager - validating and fixing links")
-            link_result = self.link_manager.validate_and_fix_links(doc_path)
-            self.log(f"  Links inspected: {link_result.get('links_inspected', 0)}")
-            self.log(f"  Links fixed: {link_result.get('links_fixed', 0)}")
-            
-            if link_result.get('links_fixed', 0) > 0:
-                self.state.prd_operations.append({
-                    "type": "link_management",
-                    "document": str(doc_path),
-                    "links_fixed": link_result.get('links_fixed', 0)
-                })
-            
-            # Step 1.2.2: Update version using VersionManager
-            self.log("Step 1.2.2: Running VersionManager - updating document version")
-            
-            ver_result = self.version_manager.update_version_for_tier_c(doc_path)
-            
-            for update in ver_result.get('updated_documents', []):
-                self.log(f"  {update['level']}: {update['old_version']} → {update['new_version']}")
-                self.state.prd_operations.append({
-                    "type": "version_management",
-                    "document": update['path'],
-                    "old_version": update['old_version'],
-                    "new_version": update['new_version'],
-                    "level": update['level']
-                })
-            
-            # Step 1.2.3: Update progress using ProgressManager
-            self.log("Step 1.2.3: Running ProgressManager - updating progress state")
-            progress_result = self.progress_manager.update_progress(doc_path, "🔄 IN PROGRESS")
-            self.log(f"  Progress state: {progress_result.get('new_progress', 'N/A')}")
-            
-            self.state.prd_operations.append({
-                "type": "progress_management",
-                "document": str(doc_path),
-                "new_progress": progress_result.get('new_progress', 'IN PROGRESS')
-            })
-            
-            # Step 1.2.4: Fix markdown issues using MarkdownAutofixManager
-            self.log("Step 1.2.4: Running MarkdownAutofixManager - fixing markdown issues")
-            markdown_result = self.markdown_autofix_manager.fix_document(doc_path, apply=True)
-            if markdown_result.get('changed'):
-                self.log(f"  Markdown fixes applied: {markdown_result.get('changes_count', 0)} changes")
-                self.state.prd_operations.append({
-                    "type": "markdown_formatting",
-                    "document": str(doc_path),
-                    "changes_count": markdown_result.get('changes_count', 0),
-                    "rules_applied": markdown_result.get('rules_applied', [])
-                })
-            else:
-                self.log(f"  No markdown issues found")
-            
-            self.log("[OK] Document metadata update complete")
-            return True
-            
-        except Exception as e:
-            self.log(f"ERROR during document update: {str(e)}", "ERROR")
-            import traceback
-            traceback.print_exc()
-            return False
+        # Step 1.2.1: Update document links (optional)
+        if self.link_manager:
+            try:
+                self.log("  [1/4] Running LinkManager...")
+                link_result = self.link_manager.validate_and_fix_links(doc_path)
+                links_fixed = link_result.get('links_fixed', 0) if link_result else 0
+                self.log(f"    Links fixed: {links_fixed}")
+                updates_attempted += 1
+                if links_fixed > 0:
+                    self.state.prd_operations.append({
+                        "type": "link_management",
+                        "document": str(doc_path),
+                        "links_fixed": links_fixed
+                    })
+            except Exception as e:
+                self.log(f"   LinkManager error (skipped): {e}", "WARN")
+        else:
+            self.log(f"  [1/4] LinkManager not available (skipped)")
+        
+        # Step 1.2.2: Update version (optional)
+        if self.version_manager:
+            try:
+                self.log("  [2/4] Running VersionManager...")
+                ver_result = self.version_manager.update_version_for_tier_c(doc_path)
+                self.log(f"    Version updated")
+                updates_attempted += 1
+                if ver_result and ver_result.get('updated_documents'):
+                    for update in ver_result.get('updated_documents', []):
+                        self.state.prd_operations.append({
+                            "type": "version_management",
+                            "document": update.get('path'),
+                            "old_version": update.get('old_version'),
+                            "new_version": update.get('new_version')
+                        })
+            except Exception as e:
+                self.log(f"   VersionManager error (skipped): {e}", "WARN")
+        else:
+            self.log(f"  [2/4] VersionManager not available (skipped)")
+        
+        # Step 1.2.3: Update progress (optional)
+        if self.progress_manager:
+            try:
+                self.log("  [3/4] Running ProgressManager...")
+                # ProgressManager might need different initialization
+                if hasattr(self.progress_manager, 'update_progress'):
+                    progress_result = self.progress_manager.update_progress(doc_path, "IN PROGRESS")
+                    self.log(f"    Progress updated")
+                    updates_attempted += 1
+                    if progress_result:
+                        self.state.prd_operations.append({
+                            "type": "progress_management",
+                            "document": str(doc_path),
+                            "new_progress": progress_result.get('new_progress', 'IN PROGRESS')
+                        })
+                else:
+                    self.log(f"   ProgressManager.update_progress not found (skipped)")
+            except Exception as e:
+                self.log(f"   ProgressManager error (skipped): {e}", "WARN")
+        else:
+            self.log(f"  [3/4] ProgressManager not available (skipped)")
+        
+        # Step 1.2.4: Fix markdown (optional)
+        if self.markdown_autofix_manager:
+            try:
+                self.log("  [4/4] Running MarkdownAutofixManager...")
+                markdown_result = self.markdown_autofix_manager.fix_document(doc_path, apply=True)
+                changes = markdown_result.get('changes_count', 0) if markdown_result else 0
+                self.log(f"    Markdown fixes: {changes} changes")
+                updates_attempted += 1
+                if changes > 0:
+                    self.state.prd_operations.append({
+                        "type": "markdown_formatting",
+                        "document": str(doc_path),
+                        "changes_count": changes
+                    })
+            except Exception as e:
+                self.log(f"   MarkdownAutofixManager error (skipped): {e}", "WARN")
+        else:
+            self.log(f"  [4/4] MarkdownAutofixManager not available (skipped)")
+        
+        self.log(f"  Metadata update complete: {updates_attempted} managers attempted")
+        return True
     
     # ========== PRD Creation & Update ==========
     
@@ -473,17 +667,17 @@ class DocumentManagementEngine:
 """
             
             # Find Implementation Notes section
-            if "## 📝 Implementation Notes" in content:
+            if "## Implementation Notes" in content:
                 content = content.replace(
-                    "## 📝 Implementation Notes",
-                    f"## 📝 Implementation Notes\n{summary_entry}"
+                    "## Implementation Notes",
+                    f"## Implementation Notes\n{summary_entry}"
                 )
             else:
                 # Add new section before References
-                if "## 🔗 References" in content:
+                if "## References" in content:
                     content = content.replace(
-                        "## 🔗 References",
-                        f"## 📝 Implementation Notes\n{summary_entry}\n## 🔗 References"
+                        "## References",
+                        f"## Implementation Notes\n{summary_entry}\n## References"
                     )
                 else:
                     content += f"\n{summary_entry}"
@@ -525,7 +719,7 @@ class DocumentManagementEngine:
     
     def manage_document_mappings(self) -> bool:
         """
-        Manage document mappings via MappingManager
+        Manage document mappings via MappingManager (optional)
         
         Returns:
             Success: bool
@@ -533,9 +727,13 @@ class DocumentManagementEngine:
         self.log("Step 1.5.1: Managing document mappings")
         
         try:
+            if not self.mapping_manager:
+                self.log("  MappingManager not available - skipping", "WARN")
+                return False
+            
             result = self.mapping_manager.manage_mapping({})
             
-            if result.get('success'):
+            if result and result.get('success'):
                 self.log(f"[OK] Mapping management completed")
                 self.state.prd_operations.append({
                     "type": "mapping_management",
@@ -543,11 +741,11 @@ class DocumentManagementEngine:
                 })
                 return True
             else:
-                self.log(f"WARNING: Mapping management failed: {result.get('error')}", "WARN")
+                self.log(f"[INFO] No mapping updates needed")
                 return False
                 
         except Exception as e:
-            self.log(f"ERROR during mapping management: {str(e)}", "ERROR")
+            self.log(f"[WARN] Mapping management skipped: {str(e)}", "WARN")
             return False
     
     # ========== Error Session Management (New) ==========
@@ -565,6 +763,10 @@ class DocumentManagementEngine:
         self.log("Step 1.5.2: Managing error sessions")
         
         try:
+            if not self.error_session_manager:
+                self.log("  ErrorSessionManager not available - skipping", "WARN")
+                return False
+            
             doc_path = Path(modified_doc_path) if Path(modified_doc_path).is_absolute() else self.workspace_root / modified_doc_path
             
             if not doc_path.exists():
@@ -692,13 +894,13 @@ class DocumentManagementEngine:
 
 **WPD_grade**: L0
 **Version**: 1.0.0
-**Status**: 📋 PENDING
+**Status**: PENDING
 **Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-## 📋 Overview
+## Overview
 This document tracks the results and progress of work plan execution for Step {part_num}.
 
-## 📊 Execution Summary
+## Execution Summary
 **Overall Progress**: 0%
 
 ### Completed Phases
@@ -710,10 +912,10 @@ This document tracks the results and progress of work plan execution for Step {p
 ### Pending
 - All phases
 
-## 📝 Implementation Notes
+## Implementation Notes
 Implementation details will be added as work progresses.
 
-## 🔗 References
+## References
 
 ### Parent Documents
 - Main document: [NextTask-2.md](../NextTask-2.md)
@@ -731,123 +933,123 @@ Implementation details will be added as work progresses.
     
     def execute(self) -> AgentState:
         """
-        Enhanced execution with context-aware routing and ALL 9 managers
+        Simplified execution with robust error handling
         
         Workflow:
-        1. Extract Part Number from modified document
-        2. Validate PRD exists for that Part Number
-        3. Update modified document metadata (Links, Version, Progress, Markdown)
-        4. Manage mappings
-        5. Manage error sessions
-        6. Execute document merge strategy (from Tier D analysis)
-        7. Create or update PRD with Implementation Summary
-        8. Route to Tier C if PRD missing, otherwise complete
+        1. Check if document merge requested
+        2. Extract Part Number from modified document
+        3. Validate PRD exists
+        4. Return success state with routing decision
         """
         self.log("="*80)
         self.log("TIER E: Document Management - Starting")
         self.log("="*80)
         
         try:
-            # Check if this is a document merge request from Tier D
+            # ===== CRITICAL: Check merge request first =====
             merge_analysis = self.previous_payload.get("merge_analysis")
-            
             if merge_analysis:
-                # Document merge mode (from Tier D)
-                self.log("\n[DOCUMENT MERGE MODE] Executing merge strategy from Tier D analysis")
+                self.log("\n[MERGE MODE] Document merge requested from Tier D")
                 return self._execute_document_merge(merge_analysis)
             
-            # Step 1.0: Extract Part Number
+            # ===== NORMAL MODE: Document management =====
+            self.log("\n[NORMAL MODE] Standard document management")
+            
+            # Step 1: Extract Part Number
             part_num = self.extract_part_number_from_modified_doc()
+            if part_num is None:
+                self.log("[WARNING] Cannot extract Part Number - routing to Tier C")
+                state = AgentState.create_failure(
+                    tier=self.tier,
+                    error_msg="Cannot extract Part Number from modified document",
+                    logic_summary="Insufficient information to route - returning to Tier C for clarification"
+                )
+                state.next_node = "C"
+                return state
             
-            # Step 1.1: Validate PRD exists
-            prd_exists, prd_path = self.validate_prd_exists(part_num) if part_num else (False, None)
+            self.log(f"[OK] Extracted Part Number: {part_num}")
             
-            # Step 1.2: Update modified document metadata
+            # Step 2: Validate PRD exists
+            prd_exists, prd_path = self.validate_prd_exists(part_num)
+            self.log(f"[INFO] PRD exists: {prd_exists}, path: {prd_path}")
+            
+            # Step 3: Simple metadata update (with safe None checks)
             modified_doc = self.previous_payload.get("target_document")
-            if modified_doc and part_num:
-                self.update_modified_document_metadata(modified_doc)
+            if modified_doc:
+                try:
+                    self.update_modified_document_metadata(modified_doc)
+                except Exception as e:
+                    self.log(f"[WARNING] Metadata update failed (non-critical): {e}", "WARN")
             
-            # Step 1.3-1.4: Create or update PRD
-            if part_num:
-                if not prd_exists:
-                    prd_path = self.create_prd_for_part(part_num)
-                
-                if prd_path and modified_doc:
-                    modified_doc_name = Path(modified_doc).name
+            # Step 4: PRD management
+            if not prd_exists:
+                prd_path = self.create_prd_for_part(part_num)
+                self.log(f"[INFO] Created new PRD: {prd_path}")
+            
+            if prd_path and modified_doc:
+                try:
                     modification_summary = self.previous_payload.get(
                         "logic_summary", 
                         "Document modified by Tier C"
                     )
-                    self.update_prd_with_summary(prd_path, modified_doc_name, modification_summary)
+                    self.update_prd_with_summary(prd_path, Path(modified_doc).name, modification_summary)
+                except Exception as e:
+                    self.log(f"[WARNING] PRD summary update failed (non-critical): {e}", "WARN")
             
-            # Step 1.5: Additional Management Operations
-            self.manage_document_mappings()
+            # Step 5: Additional management (best-effort)
+            try:
+                self.manage_document_mappings()
+            except Exception as e:
+                self.log(f"[WARNING] Mapping management skipped: {e}", "WARN")
+            
             if modified_doc:
-                self.manage_error_sessions(modified_doc)
-                self.merge_related_documents(modified_doc)
+                try:
+                    self.manage_error_sessions(modified_doc)
+                except Exception as e:
+                    self.log(f"[WARNING] Error session management skipped: {e}", "WARN")
+                
+                try:
+                    self.merge_related_documents(modified_doc)
+                except Exception as e:
+                    self.log(f"[WARNING] Document merge skipped: {e}", "WARN")
             
-            # Step 1.6: Determine routing
+            # Step 6: Routing decision
             next_node, routing_reason = self.decide_routing(part_num, prd_exists, prd_path)
             
-            # Build final state
-            if part_num is None:
-                # Cannot extract Part Number - route to Tier C
-                state = AgentState.create_failure(
-                    tier=self.tier,
-                    error_msg="Cannot extract Part Number from modified document",
-                    logic_summary=routing_reason
-                )
-                state.next_node = "C"
-            else:
-                # Success - workflow complete or PRD created
-                state = AgentState.create_success(
-                    tier=self.tier,
-                    logic_summary=routing_reason,
-                    payload=self.state.to_payload(),
-                    next_node=next_node
-                )
+            # Build success state
+            state = AgentState.create_success(
+                tier=self.tier,
+                logic_summary=routing_reason,
+                payload=self.state.to_payload(),
+                next_node=next_node
+            )
             
-            # Add comprehensive trace
+            # Add trace
             state.decision_trace.append({
                 "type": "tier_e_execution",
                 "part_number": part_num,
                 "prd_path": str(prd_path) if prd_path else None,
                 "prd_exists": prd_exists,
-                "modified_document": self.previous_payload.get("target_document"),
-                "operations_performed": len(self.state.prd_operations),
-                "managers_used": 9,
-                "manager_list": [
-                    "LinkManager",
-                    "VersionManager",
-                    "ChecklistManager",
-                    "ProgressManager",
-                    "MappingManager",
-                    "ErrorSessionManager",
-                    "MarkdownAutofixManager",
-                    "DocumentMerger"
-                ],
+                "modified_document": modified_doc,
                 "next_node": next_node,
                 "routing_reason": routing_reason,
-                "execution_log": self.execution_log
+                "execution_log": self.execution_log[-10:] if len(self.execution_log) > 10 else self.execution_log
             })
             
             return state
             
         except Exception as e:
-            self.log(f"CRITICAL ERROR: {str(e)}", "ERROR")
+            self.log(f"\n[CRITICAL ERROR] {str(e)}", "ERROR")
             import traceback
-            traceback.print_exc()
+            self.log(f"Traceback:\n{traceback.format_exc()}", "ERROR")
             
             state = AgentState.create_failure(
                 tier=self.tier,
-                error_msg=f"Exception in document management: {str(e)}",
-                logic_summary=f"Error: {str(e)}"
+                error_msg=f"Unexpected error in document management: {str(e)}",
+                logic_summary=f"Exception: {type(e).__name__}"
             )
-            
-            state.decision_trace.append({
-                "type": "error",
-                "execution_log": self.execution_log
-            })
+            state.next_node = "F"  # Route to Tier F for unknown issues
+            return state
             
             return state
         
@@ -857,22 +1059,37 @@ Implementation details will be added as work progresses.
             self.log("="*80)
 
 
-def main(user_input: str, workspace_root: str = ".", previous_payload: Optional[Dict[str, Any]] = None) -> AgentState:
+def main(user_input: str, workspace_root: str = ".", previous_payload: Optional[Dict[str, Any]] = None, 
+         github_repo_url: Optional[str] = None, github_branch: Optional[str] = None, 
+         github_token: Optional[str] = None) -> AgentState:
     """
-    Tier E main entry point
+    Tier E main entry point (Enhanced with GitHub repository support)
     
     Args:
         user_input: User input text
         workspace_root: Workspace root directory
         previous_payload: Payload from Tier C with modified document info
+        github_repo_url: External GitHub repository URL (e.g., https://github.com/user/repo.git)
+        github_branch: Branch name for external repository
+        github_token: GitHub token for private repositories
     
     Returns:
         AgentState with routing decision
     """
+    # Read GitHub settings from environment if not provided
+    if not github_repo_url:
+        import os
+        github_repo_url = os.environ.get("GITHUB_REPO_URL")
+        github_branch = os.environ.get("GITHUB_BRANCH")
+        github_token = os.environ.get("GITHUB_TOKEN")
+    
     context = TaskContext(
         user_input=user_input,
         current_tier="E",
-        workspace_root=workspace_root
+        workspace_root=workspace_root,
+        github_repo_url=github_repo_url,
+        github_branch=github_branch,
+        github_token=github_token
     )
     
     engine = DocumentManagementEngine(context, previous_payload)

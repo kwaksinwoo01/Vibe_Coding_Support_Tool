@@ -10,7 +10,7 @@ vibeStation은 민감한 정보(GitHub Token, API Key 등)를 **자동으로 암
 
 ---
 
-## 🚀 빠른 설정 (3단계)
+## 빠른 설정 (3단계)
 
 ### 1️⃣ 필수 패키지 설치
 
@@ -149,7 +149,7 @@ python test_encryption.py
 
 ---
 
-## 💡 사용 예시
+## 사용 예시
 
 ### 예시 1: 설정 저장
 
@@ -199,7 +199,7 @@ class SettingsDialog:
 
 ---
 
-## ⚙️ 고급 설정
+## 고급 설정
 
 ### 특정 키만 암호화
 
@@ -237,7 +237,7 @@ decrypted = manager.decrypt_value(encrypted)
 
 ---
 
-## 🔧 문제 해결
+## 문제 해결
 
 ### Q: "암호화 라이브러리를 사용할 수 없습니다" 오류
 
@@ -272,14 +272,14 @@ setup_encryption()
 
 ---
 
-## 📚 상세 문서
+## 상세 문서
 
 - [ENCRYPTION_GUIDE.md](ENCRYPTION_GUIDE.md) - 완전한 가이드
 - [ENCRYPTION_INTEGRATION.md](ENCRYPTION_INTEGRATION.md) - UI 통합 방법
 
 ---
 
-## ✅ 다음 단계
+## 다음 단계
 
 1. **패키지 설치**: `pip install cryptography`
 2. **암호화 초기화**: `python -c "from settings.config_manager import setup_encryption; setup_encryption()"`

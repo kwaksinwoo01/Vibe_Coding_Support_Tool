@@ -602,7 +602,7 @@ class TepDM(QWidget):
                 # Switch to editor tab for review and manual editing (if available)
                 if hasattr(self, 'tabs'):
                     for i in range(self.tabs.count()):
-                        if self.tabs.tabText(i) == "📝 Instructions Editor":
+                        if self.tabs.tabText(i) == "Instructions Editor":
                             self.tabs.setCurrentIndex(i)
                             break
                 
@@ -700,21 +700,20 @@ class TepDM(QWidget):
 
         # 1. Instructions Editor tab
         self.editor_widget = InstructionsEditorWidget(self.yaml_handler)
-        self.tabs.addTab(self.editor_widget, "📝 Instructions Editor")
+        self.tabs.addTab(self.editor_widget, " Instructions Editor")
 
         # 2. Setup Wizard tab
         self.setup_widget = SetupWizardWidget()
         self.setup_widget.setup_completed.connect(self.on_setup_completed)
-        self.tabs.addTab(self.setup_widget, "🛠️ Setup Wizard")
+        self.tabs.addTab(self.setup_widget, "Setup Wizard")
 
         # 3. Info tab
         info_widget = self.create_info_widget()
-        self.tabs.addTab(info_widget, "ℹ️ Info")
+        self.tabs.addTab(info_widget, "Info")
 
         # 4. File Manager tab (새로운 기능)
         file_manager_widget = self.create_file_manager_widget()
-        self.tabs.addTab(file_manager_widget, "📁 File Manager")
-
+        self.tabs.addTab(file_manager_widget, "File Manager")
         layout.addWidget(self.tabs)
 
         # Status bar - removed for QWidget compatibility

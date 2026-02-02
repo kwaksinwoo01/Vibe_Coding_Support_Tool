@@ -98,9 +98,9 @@ To customize WPD templates for your specific needs:
        REQUIRED_SECTIONS = [
            "## 📋 Executive Summary",
            "## 🎯 Goals and Success Criteria",
-           "## 🔧 Execution Plan",
+           "## Execution Plan",
            "## 📝 Risk Assessment",  # New section
-           "## 📚 References",
+           "## References",
        ]
        
        SECTION_DESCRIPTIONS = {

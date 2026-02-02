@@ -9,11 +9,11 @@ Handles:
 - Batch updates across multiple documents
 
 Status Symbols:
-- ✅ complete/done
-- ❌ failed
-- ⏳ in_progress
-- 📋 pending
-- 🚫 blocked
+- [x] complete/done
+- [ ] failed
+- [ ] in_progress
+- [ ] pending
+- [ ] blocked
 """
 
 import re
@@ -25,21 +25,21 @@ from typing import Optional, List, Dict, Literal
 class DocumentUpdater:
     """
     Updates WPD and PRD documents with progress tracking
-    
+
     Features:
     - Update checklist item status
     - Add timestamps to completed tasks
     - Update implementation summaries
     - Track progress systematically
     """
-    
+
     STATUS_SYMBOLS = {
-        'complete': '✅',
-        'done': '✅',
-        'failed': '❌',
-        'in_progress': '⏳',
-        'pending': '📋',
-        'blocked': '🚫'
+        'complete': '[x]',
+        'done': '[x]',
+        'failed': '[ ]',
+        'in_progress': '[ ]',
+        'pending': '[ ]',
+        'blocked': '[ ]'
     }
     
     def __init__(self, workspace_root: Path):
@@ -82,14 +82,14 @@ class DocumentUpdater:
                 if add_timestamp and status in ['complete', 'done']:
                     # Add timestamp for completed items
                     lines[i] = re.sub(
-                        r'(\s*[-*]\s+)\[[ xX✅❌⏳📋🚫]\]\s*(.+)',
+                        r'(\s*[-*]\s+)\[[ xX]\]\s*(.+)',
                         rf'\1[{status_symbol}] \2 (completed: {timestamp})',
                         line
                     )
                 else:
                     # Just update status symbol
                     lines[i] = re.sub(
-                        r'(\s*[-*]\s+)\[[ xX✅❌⏳📋🚫]\]\s*',
+                        r'(\s*[-*]\s+)\[[ xX]\]\s*',
                         rf'\1[{status_symbol}] ',
                         line
                     )
@@ -222,23 +222,17 @@ class DocumentUpdater:
             
             if not in_target_section:
                 continue
-            
+
             # Match checklist items
-            match = re.match(r'^(\s*)[-*]\s+(\[[ xX✅❌⏳📋🚫]\]|[✅❌⏳📋🚫])?\s*(.+)$', line)
+            match = re.match(r'^(\s*)[-*]\s+(\[[ xX]\])?(.+)$', line)
             if match:
                 indent = len(match.group(1))
                 status_part = match.group(2) or ''
                 text = match.group(3).strip()
-                
+
                 # Determine status
-                if '[x]' in status_part.lower() or '✅' in status_part:
+                if '[x]' in status_part.lower():
                     status = 'complete'
-                elif '❌' in status_part:
-                    status = 'failed'
-                elif '⏳' in status_part:
-                    status = 'in_progress'
-                elif '🚫' in status_part:
-                    status = 'blocked'
                 else:
                     status = 'pending'
                 

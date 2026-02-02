@@ -74,6 +74,7 @@ class ServerThread(QThread):
         self.redis_client = None
         self.checkpointer = None
         self._running = True
+        self.server = None  # Uvicorn 서버 인스턴스 저장
         
         # 전역 시그널 설정 (타입 체크 무시)
         CommSignal.log_signal = self.received  # type: ignore
@@ -99,8 +100,8 @@ class ServerThread(QThread):
                 port=self.port, 
                 log_level="error"
             )
-            server = uvicorn.Server(config)
-            asyncio.run(server.serve())
+            self.server = uvicorn.Server(config)
+            asyncio.run(self.server.serve())
             
         except Exception as e:
             error_msg = f"서버 실행 오류: {e}\n{traceback.format_exc()}"
@@ -202,9 +203,19 @@ class ServerThread(QThread):
                 return {"status": "error", "message": str(e)}
     
     def stop(self):
-        """서버 중지"""
+        """서버 중지 - Uvicorn 서버를 안전하게 종료"""
         self._running = False
         self.log_signal.emit("[서버] 중지 요청됨")
+        
+        # Uvicorn 서버 종료
+        if self.server:
+            try:
+                self.server.should_exit = True  # Uvicorn에 종료 신호 전송
+                self.log_signal.emit("[서버] Uvicorn 서버 종료 신호 전송")
+            except Exception as e:
+                logger.warning(f"Uvicorn 서버 종료 오류: {e}")
+        
+        # Redis 정리
         if self.redis_client:
             try:
                 self.redis_client.close()

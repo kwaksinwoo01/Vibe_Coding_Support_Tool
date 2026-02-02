@@ -69,31 +69,31 @@ def get_required_sections_for_grade(grade: str) -> List[str]:
     """
     sections_map = {
         "L0": [
-            "## 📋 Executive Summary",
-            "## 🎯 Goals and Success Criteria",
-            "## 📑 Three-Tier Documentation",
-            "## 📚 References",
+            "## Executive Summary",
+            "## Goals and Success Criteria",
+            "## Three-Tier Documentation",
+            "## References",
         ],
         "L1": [
-            "## 📋 Executive Summary",
-            "## 🎯 Goals and Success Criteria",
-            "## 🔧 Execution Plan",
-            "## 📚 References",
+            "## Executive Summary",
+            "## Goals and Success Criteria",
+            "## Execution Plan",
+            "## References",
         ],
         "L2": [
-            "## 📋 Overview",
-            "## 🎯 Goals and Success Criteria",
+            "## Overview",
+            "## Goals and Success Criteria",
             "## Audit results",
             "## Implementation Plan",
-            "## 📝 Implementation Notes",
-            "## 📚 References",
+            "## Implementation Notes",
+            "## References",
         ],
         "L3": [
-            "## 📋 Overview",
-            "## 🎯 Success Criteria",
-            "## 🔧 Implementation Steps",
-            "## 📝 Implementation Notes",
-            "## 📚 References",
+            "## Overview",
+            "## Success Criteria",
+            "## Implementation Steps",
+            "## Implementation Notes",
+            "## References",
         ],
     }
     

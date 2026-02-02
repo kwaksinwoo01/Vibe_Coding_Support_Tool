@@ -152,6 +152,8 @@ class MainWindow(QMainWindow):
 
     def load_repository_config(self):
         """저장된 저장소 설정 로드 (암호화된 설정 우선)"""
+        import os
+        
         saved_config = {}
         # 암호화된 설정만 사용 (폴백 없음)
         if ENCRYPTION_AVAILABLE:
@@ -171,6 +173,14 @@ class MainWindow(QMainWindow):
             token = saved_config.get("github_token", "")
             if token:
                 self.github_repo_config.github_token = token
+            
+            # Export GitHub settings to environment variables for MCP agents
+            os.environ["GITHUB_REPO_URL"] = repo_path
+            os.environ["GITHUB_BRANCH"] = branch
+            if token:
+                os.environ["GITHUB_TOKEN"] = token
+            
+            self.statusBar().showMessage(f"GitHub 저장소 설정 완료: {repo_path} (브랜치: {branch})")
             
             # MCP 로그 탭에 저장소 설정 업데이트
             if hasattr(self, 'mcp_log_ui'):
@@ -226,16 +236,25 @@ class MainWindow(QMainWindow):
             self.mcp_log_ui.add_log('F', message, '완료')
 
     def closeEvent(self, event):
-        """윈도우 종료 이벤트 - 모든 서버 정리"""
-        # MainWindow의 서버 스레드 정리
+        """윈도우 종료 이벤트 - 모든 서버 정리 (타임아웃 적용)"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # MainWindow의 서버 스레드 정리 (최대 5초 대기)
         if self.server_thread and self.server_thread.isRunning():
             self.server_thread.stop()
-            self.server_thread.wait()
+            if not self.server_thread.wait(5000):  # 5초 타임아웃
+                logger.warning("서버 스레드 강제 종료")
+                self.server_thread.terminate()
+                self.server_thread.wait()
         
-        # TepMCP 탭의 서버 스레드도 정리
+        # TepMCP 탭의 서버 스레드도 정리 (최대 5초 대기)
         if hasattr(self, 'mcp_tab_ui') and self.mcp_tab_ui.server_thread:
             if self.mcp_tab_ui.server_thread.isRunning():
                 self.mcp_tab_ui.stop_server()
-                self.mcp_tab_ui.server_thread.wait()
+                if not self.mcp_tab_ui.server_thread.wait(5000):  # 5초 타임아웃
+                    logger.warning("MCP 탭 서버 스레드 강제 종료")
+                    self.mcp_tab_ui.server_thread.terminate()
+                    self.mcp_tab_ui.server_thread.wait()
         
         event.accept()

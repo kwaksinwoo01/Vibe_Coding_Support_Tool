@@ -252,7 +252,7 @@ class GitHubRepositoryConfig:
                 except Exception:
                     detail = ""
                 token_status = "있음 (값이 유효하지 않을 수 있음)" if self.github_token else "없음"
-                print(f"[GitHub API] ❌ 401 Unauthorized - 토큰 인증 실패 (토큰: {token_status})")
+                print(f"[GitHub API] 401 Unauthorized - 토큰 인증 실패 (토큰: {token_status})")
                 print(f"[GitHub API] 요청 URL: https://api.github.com/repos/{self.owner}/{self.repo_name}/branches")
                 if detail:
                     print(f"[GitHub API] 상세 응답: {detail}")
@@ -358,14 +358,14 @@ class GitHubRepositoryConfig:
                 return True
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                print(f"[Token 검증] ❌ Token 인증 실패 (401 Unauthorized)")
-                print(f"[Token 검증]    Token이 유효하지 않거나 만료되었을 수 있습니다.")
-                print(f"[Token 검증]    확인: https://github.com/settings/tokens")
+                print(f"[Token 검증] Token 인증 실패 (401 Unauthorized)")
+                print(f"[Token 검증] Token이 유효하지 않거나 만료되었을 수 있습니다.")
+                print(f"[Token 검증] 확인: https://github.com/settings/tokens")
             else:
-                print(f"[Token 검증] ❌ HTTP 오류: {e.code}")
+                print(f"[Token 검증] HTTP 오류: {e.code}")
             return False
         except Exception as e:
-            print(f"[Token 검증] ❌ 오류: {str(e)}")
+            print(f"[Token 검증] 오류: {str(e)}")
             return False
     
     def set_and_validate_token(self, token: str) -> bool:

@@ -82,18 +82,17 @@ Simple keyword-based tier classification.
     )
     
     # Display results
-    print(f"\n✅ Merge completed successfully!")
+    print(f"\n[SUCCESS] Merge completed successfully!")
     print(f"   Old version: {result['old_version']}")
     print(f"   New version: {result['new_version']}")
     print(f"   Sections processed: {result['merge_decisions']}")
     print(f"   - Integrated: {result['integrated']}")
     print(f"   - Appended: {result['appended']}")
     print(f"   - New sections: {result['new_sections']}")
-    
+
     print("\nMerge decisions:")
     for decision in result['decisions']:
-        print(f"   • {decision['action'].upper()}: '{decision['source_title']}' "
-              f"-> '{decision.get('target_title', 'N/A')}' "
+        print(f"   * {decision['action'].upper()}: '{decision['source_title']}' "
               f"(similarity: {decision['similarity']:.2f})")
     
     print("\nMerged content preview:")
@@ -122,9 +121,9 @@ def example_admp_compliance():
     
     merged = target_path.read_text(encoding='utf-8')
     
-    print("\n✅ ADMP Compliance Checks:")
-    print(f"   [OK] Version incremented: {result['old_version']} → {result['new_version']}")
-    print(f"   [OK] Changelog added: {'## 📝 Changelog' in merged}")
+    print("\n[SUCCESS] ADMP Compliance Checks:")
+    print(f"   [OK] Version incremented: {result['old_version']} -> {result['new_version']}")
+    print(f"   [OK] Changelog added: {'## Changelog' in merged}")
     print(f"   [OK] No new files created (merged into existing)")
     print(f"   [OK] Justification tracked in changelog")
 
@@ -162,7 +161,7 @@ Basic authentication using session cookies.
     
     result = merger.merge_documents(source_path, target_path)
     
-    print("\n✅ Semantic Matching Results:")
+    print("\n[SUCCESS] Semantic Matching Results:")
     for decision in result['decisions']:
         print(f"\n   Source: '{decision['source_title']}'")
         print(f"   Matched to: '{decision.get('target_title', 'N/A')}'")
@@ -175,26 +174,26 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("SEMANTIC DOCUMENT MERGER - USAGE EXAMPLES")
     print("=" * 60)
-    
+
     try:
         example_basic_merge()
         example_admp_compliance()
         example_semantic_matching()
-        
+
         print("\n" + "=" * 60)
-        print("✅ All examples completed successfully!")
+        print("[SUCCESS] All examples completed successfully!")
         print("=" * 60)
         print("\nKey Features Demonstrated:")
-        print("  • Semantic section matching with similarity scoring")
-        print("  • Content integration (not simple append)")
-        print("  • Automatic version increment")
-        print("  • Changelog generation")
-        print("  • ADMP policy compliance")
-        print("  • Category-based associations")
+        print("  * Semantic section matching with similarity scoring")
+        print("  * Content integration (not simple append)")
+        print("  * Automatic version increment")
+        print("  * Changelog generation")
+        print("  * ADMP policy compliance")
+        print("  * Category-based associations")
         print("\n")
         
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\n[ERROR] Error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

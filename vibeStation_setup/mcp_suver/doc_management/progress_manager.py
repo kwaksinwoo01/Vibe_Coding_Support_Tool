@@ -15,10 +15,7 @@ from typing import Dict, Any, List
 class ProgressManager:
     """Manages document progress states"""
     
-    VALID_STATES = ["Not Started", "In Progress", "Completed", "📋 PENDING", "🔄 IN PROGRESS", "✅ COMPLETE"]
-    
-    def __init__(self, workspace_root: Path):
-        self.workspace_root = workspace_root
+    VALID_STATES = ["Not Started", "In Progress", "Completed", "PENDING", "IN PROGRESS", "COMPLETE"]
     
     def update_progress(self, doc_path: Path, progress_state: str) -> Dict[str, Any]:
         """
@@ -96,17 +93,15 @@ class ProgressManager:
     
     def mark_as_started(self, doc_path: Path) -> Dict[str, Any]:
         """Mark document as In Progress"""
-        return self.update_progress(doc_path, "🔄 IN PROGRESS")
-    
+        return self.update_progress(doc_path, "IN PROGRESS")
+
     def mark_as_completed(self, doc_path: Path) -> Dict[str, Any]:
         """Mark document as Completed"""
-        return self.update_progress(doc_path, "✅ COMPLETE")
-    
+        return self.update_progress(doc_path, "COMPLETE")
+
     def mark_as_pending(self, doc_path: Path) -> Dict[str, Any]:
         """Mark document as Pending"""
-        return self.update_progress(doc_path, "📋 PENDING")
-    
-    def get_hierarchy_progress(self, doc_paths: List[Path]) -> Dict[str, Any]:
+        return self.update_progress(doc_path, "PENDING")
         """
         Get progress summary for multiple documents
         

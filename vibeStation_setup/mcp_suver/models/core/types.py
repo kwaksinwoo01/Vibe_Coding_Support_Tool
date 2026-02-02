@@ -74,12 +74,12 @@ WPDGradeValue = Literal["L0", "L1", "L2", "L3"]
 # Document type values
 DocumentTypeValue = Literal["WPD", "PRD"]
 
-# Status emoji mapping
+# Status mapping
 STATUS_EMOJI_MAP = {
-    "PENDING": "📋",
-    "IN_PROGRESS": "🔄",
-    "COMPLETE": "✅",
-    "FAILED": "❌",
+    "PENDING": "",
+    "IN_PROGRESS": "",
+    "COMPLETE": "",
+    "FAILED": "",
 }
 
 # WPD Grade hierarchy

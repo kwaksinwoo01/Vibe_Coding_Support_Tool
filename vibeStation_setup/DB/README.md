@@ -1,6 +1,6 @@
 # 🚀 시스템 개선 완료 요약
 
-## 📊 4대 주요 개선사항
+## 4대 주요 개선사항
 
 ### 1️⃣ Circuit Breaker 비동기 모드 ✅
 - **완화 수준**: `failure_threshold` 5→10, `cooldown` 60→30초
@@ -111,7 +111,7 @@ Circuit Breaker OPEN (실패 기록)
 
 ---
 
-## ⚡ 성능 개선
+## 성능 개선
 
 | 항목 | Before | After | 개선율 |
 |------|--------|-------|--------|
@@ -150,7 +150,7 @@ Get-Content .github\MCP\result.json | ConvertFrom-Json | ConvertTo-Json -Depth 5
 
 ---
 
-## 📊 규칙 정리
+## 규칙 정리
 
 ### Rule 1: Circuit Breaker 비동기 모드
 ```
@@ -182,7 +182,7 @@ Get-Content .github\MCP\result.json | ConvertFrom-Json | ConvertTo-Json -Depth 5
 
 ---
 
-## 🔍 다음 단계
+## 다음 단계
 
 1. **테스트 실행**
    - MCP 서버 재시작 테스트
@@ -206,7 +206,7 @@ Get-Content .github\MCP\result.json | ConvertFrom-Json | ConvertTo-Json -Depth 5
 
 ---
 
-## ✨ 핵심 개선 효과
+## 핵심 개선 효과
 
 ✅ **안정성**: Circuit Breaker OPEN에서도 계속 진행 (비동기)  
 ✅ **신뢰도**: 매번 새로 측정 (동적 조정)  
