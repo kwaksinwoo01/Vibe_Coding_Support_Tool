@@ -68,16 +68,7 @@ def main(user_input: str, workspace_root: str = ".",
 
 ### 2. Language Graph Classifier
 
-Enhanced keyword-based classification with confidence scoring:
 
-```python
-TIER_KEYWORDS = {
-    "A": ["create", "plan", "작업 계획 생성", "wpd 생성"],
-    "B": ["perform", "execute", "실행", "진행"],
-    "C": ["change", "modify", "수정", "변경"],
-    "D": ["error", "bug", "오류", "문제"],
-    "E": ["save", "mapping", "저장", "동기화"],
-}
 
 # Scoring: count keyword matches
 # Returns tier with highest score
