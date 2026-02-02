@@ -8,6 +8,7 @@ import subprocess
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
+from pathlib import Path
 from pydantic import BaseModel
 from PyQt6.QtCore import QThread, pyqtSignal
 from fastapi import FastAPI, Request
@@ -15,6 +16,22 @@ from fastapi.responses import StreamingResponse
 
 # 로거 설정
 logger = logging.getLogger(__name__)
+
+# ============================================
+# Project Root Configuration for subprocess execution
+# ============================================
+# Calculate project root (repository root where vibeStation_setup is a subdirectory)
+# server_thread.py is at: Vibe_Coding_Support_Tool/vibeStation_setup/mcp_suver/core/server_thread.py
+# Project root is: Vibe_Coding_Support_Tool (4 levels up)
+# This allows importing as: vibeStation_setup.mcp_suver.main_agent
+_CALLING_FILE = Path(__file__).resolve()
+_PROJECT_ROOT = _CALLING_FILE.parent.parent.parent.parent  # Go up to repository root
+
+# Ensure project root is in sys.path for module imports
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+logger.info(f"Project root for subprocess: {_PROJECT_ROOT}")
 
 
 # ============================================
@@ -145,7 +162,13 @@ class ServerThread(QThread):
         
         @self.app.post("/execute")
         async def execute_task(request: Request):
-            """에이전트 작업 실행 (main_agent.py 모듈 직접 사용)"""
+            """에이전트 작업 실행 (main_agent.py 모듈 직접 사용)
+            
+            Fix for diagnoseModulePathError:
+            - Sets explicit working directory (cwd) to project root
+            - Ensures module can be found via -m flag
+            - Inherits parent environment variables
+            """
             try:
                 data = await request.json()
                 user_input = data.get("user_input", "")
@@ -153,11 +176,14 @@ class ServerThread(QThread):
                 self.log_signal.emit(f"[실행] 요청: {user_input[:100]}")
                 
                 # main_agent.py 모듈을 subprocess로 실행
+                # Fix: Added cwd and env parameters for reliable module execution
                 result = subprocess.run(
                     [sys.executable, "-m", "vibeStation_setup.mcp_suver.main_agent", user_input],
+                    cwd=str(_PROJECT_ROOT),  # Set working directory to project root
                     capture_output=True,
                     text=True,
-                    timeout=60
+                    timeout=60,
+                    env=os.environ.copy()  # Inherit parent environment
                 )
                 
                 self.log_signal.emit(f"[실행] 완료 (코드: {result.returncode})")
