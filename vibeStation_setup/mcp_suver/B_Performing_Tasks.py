@@ -46,6 +46,9 @@ if sys.stderr:
 sys.path.insert(0, str(Path(__file__).parent))
 
 from models.core import AgentState, TierBState, DocumentSources, TaskContext
+# Import centralized tier keywords
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config.tier_keywords import get_tier_keywords_list
 
 
 class TaskExecutionEngine:
@@ -86,6 +89,8 @@ class TaskExecutionEngine:
         """
         사용자 입력이 작업 계획 실행 지시인지 확인 (또는 Tier A로부터 체인됨)
         
+        Uses centralized tier keywords from tier_keywords.py module
+        
         Returns:
             bool: True if input is valid for Tier B execution
         """
@@ -93,23 +98,11 @@ class TaskExecutionEngine:
         if self.context.previous_state and self.context.previous_state.tier == 'A':
             return True
         
-        # Check if user input contains Tier B keywords
-        keywords = [
-            "perform work plan",
-            "perform plan",
-            "execute plan",
-            "start plan",
-            "run plan",
-            "작업 계획 실행",
-            "계획 실행",
-            "실행",
-            "진행",
-            "continue from tier a",
-            "continue from tier"
-        ]
+        # Use centralized Tier B keywords from tier_keywords.py
+        keywords = get_tier_keywords_list("B")
         
         user_input_lower = self.context.user_input.lower()
-        return any(keyword in user_input_lower for keyword in keywords)
+        return any(keyword.lower() in user_input_lower for keyword in keywords)
     
     def load_work_plan(self) -> Optional[str]:
         """
