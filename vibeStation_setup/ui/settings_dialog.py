@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 
 from settings.github_repository_config import GitHubRepositoryConfig
 from .dialog.github_token_dialog import GitHubTokenHelpDialog
-from settings.config_manager import load_env_vars, save_encrypted_config, load_encrypted_config, ENCRYPTION_AVAILABLE
+from settings.config_manager import load_env_vars, ENCRYPTION_AVAILABLE
+from settings.encryption_manager import get_encryption_manager
 
 # 환경 변수 로드
 load_dotenv()
@@ -69,7 +70,8 @@ class SettingsDialog(QDialog):
         # 암호화된 설정만 사용 (폴백 없음)
         if ENCRYPTION_AVAILABLE:
             try:
-                saved_config = load_encrypted_config(self.config_file.parent)
+                manager = get_encryption_manager(self.config_file.parent)
+                saved_config = manager.load_config()
             except Exception:
                 saved_config = {}
         else:
@@ -77,7 +79,8 @@ class SettingsDialog(QDialog):
 
         # GitHub Token 로드
         if "github_token" in saved_config:
-            self.github_token_input.setText(saved_config["github_token"])
+            token_value = saved_config["github_token"]
+            self.github_token_input.setText(token_value)
         
         # Workflow Secret 로드
         if "workflow_secret" in saved_config:
@@ -645,8 +648,9 @@ class SettingsDialog(QDialog):
                 self.log("Raw URL을 생성할 수 없습니다. 저장소 설정을 확인하세요.")
         
         # 설정 파일에 저장 (암호화된 설정만 사용)
+        token_to_save = self.github_token_input.text().strip()
         config = {
-            "github_token": self.github_token_input.text().strip(),
+            "github_token": token_to_save,
             "workflow_secret": self.workflow_secret_input.text().strip(),
             "repo_path": repo_path,
             "main_doc": main_doc,
@@ -656,11 +660,20 @@ class SettingsDialog(QDialog):
             "keyword_filter": self.keyword_filter_checkbox.isChecked()
         }
 
-        save_encrypted_config(
-            config,
-            config_dir=self.config_file.parent,
-            sensitive_keys=["github_token", "workflow_secret"]
-        )
+        # EncryptionManager를 통해 저장
+        try:
+            manager = get_encryption_manager(self.config_file.parent)
+            success = manager.update_values(
+                config,
+                sensitive_keys=["github_token", "workflow_secret"]
+            )
+            
+            if not success:
+                self.log("⚠ 설정 저장 실패")
+                return
+        except Exception as e:
+            self.log(f"⚠ 설정 저장 오류: {e}")
+            return
 
         # 전역 변수 업데이트
         global GITHUB_REPO_PATH, MAIN_DOCUMENT_PATH
@@ -695,22 +708,29 @@ class SettingsDialog(QDialog):
         self.log(f"[저장 전 검증] github_token 길이: {len(config['github_token'])} 자")
         self.log(f"[저장 전 검증] github_token 앞 3글자: {config['github_token'][:3] if len(config['github_token']) >= 3 else '***'}")
 
-        save_encrypted_config(
-            config,
-            config_dir=self.config_file.parent,
-            sensitive_keys=["github_token", "workflow_secret"]
-        )
-
-        self.log("✓ 환경 변수 적용 및 저장됨 (암호화된 설정에만 저장됨)")
-        self.log(f"  저장 위치 (암호화 파일): {self.config_file.parent / 'encrypted_config.enc'}")
-        
-        # 저장 후 다시 로드하여 검증
+        # EncryptionManager를 통해 저장 (이중 암호화 방지)
         try:
-            loaded_config = load_encrypted_config(self.config_file.parent)
+            manager = get_encryption_manager(self.config_file.parent)
+            success = manager.update_values(
+                config,
+                sensitive_keys=["github_token", "workflow_secret"]
+            )
+            
+            if not success:
+                self.log("⚠ 환경 변수 저장 실패")
+                return
+                
+            self.log("✓ 환경 변수 적용 및 저장됨 (암호화된 설정에만 저장됨)")
+            self.log(f"  저장 위치 (암호화 파일): {self.config_file.parent / 'encrypted_config.enc'}")
+            
+            # 저장 후 다시 로드하여 검증
+            loaded_config = manager.load_config()
             if "github_token" in loaded_config:
                 loaded_token = loaded_config["github_token"]
                 self.log(f"[저장 후 검증] 로드된 token 길이: {len(loaded_token)} 자")
                 self.log(f"[저장 후 검증] 로드된 token 일치: {loaded_token == self.env_vars['GITHUB_TOKEN']}")
+                if loaded_token != self.env_vars['GITHUB_TOKEN']:
+                    self.log(f"[저장 후 검증] ⚠ 경고: 로드된 토큰과 입력한 토큰이 다름!")
             else:
                 self.log("[저장 후 검증] ⚠ 로드된 설정에 github_token이 없습니다!")
         except Exception as e:

@@ -19,7 +19,8 @@ from .tab_dm import TepDM
 from .tep_mcp import TepMCP
 from .tab_mcp_log import MCPLogTab
 from mcp_suver.core.server_thread import ServerThread
-from settings.config_manager import load_env_vars, load_encrypted_config, ENCRYPTION_AVAILABLE
+from settings.config_manager import load_env_vars, ENCRYPTION_AVAILABLE
+from settings.encryption_manager import get_encryption_manager
 from settings.github_repository_config import GitHubRepositoryConfig
 
 class MainWindow(QMainWindow):
@@ -155,7 +156,8 @@ class MainWindow(QMainWindow):
         # 암호화된 설정만 사용 (폴백 없음)
         if ENCRYPTION_AVAILABLE:
             try:
-                saved_config = load_encrypted_config(self.config_file.parent)
+                manager = get_encryption_manager(self.config_file.parent)
+                saved_config = manager.load_config()
             except Exception:
                 saved_config = {}
         else:

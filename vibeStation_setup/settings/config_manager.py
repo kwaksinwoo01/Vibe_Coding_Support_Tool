@@ -130,6 +130,7 @@ def save_encrypted_config(config: Dict[str, Any], config_dir: Optional[Path] = N
                          sensitive_keys: Optional[list] = None) -> bool:
     """
     설정을 암호화하여 저장 (jasypt 스타일)
+    EncryptionManager를 통해서만 저장을 수행합니다.
     
     Args:
         config: 저장할 설정 딕셔너리
@@ -152,11 +153,8 @@ def save_encrypted_config(config: Dict[str, Any], config_dir: Optional[Path] = N
     
     try:
         manager = get_encryption_manager(config_dir)
-        if sensitive_keys is None:
-            manager.save_config(config)
-        else:
-            manager.save_config(config, sensitive_keys)
-        return True
+        # EncryptionManager의 update_values 메서드 사용 (이중 암호화 방지)
+        return manager.update_values(config, sensitive_keys)
     except Exception as e:
         print(f"암호화된 설정 저장 실패: {e}")
         return False
