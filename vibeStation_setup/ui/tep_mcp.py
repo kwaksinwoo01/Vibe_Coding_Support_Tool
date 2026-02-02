@@ -23,10 +23,15 @@ from settings.config_manager import load_config, save_config, load_env_vars
 
 
 from settings.constants import (
-    AGENT_PATH, FAVICON_PATH, GITHUB_REPO_PATH, MAIN_DOCUMENT_PATH,
+    FAVICON_PATH, GITHUB_REPO_PATH, MAIN_DOCUMENT_PATH,
     DEFAULT_PORT, SERVER_HOST,
     LOG_DIR, LOG_FILE, CONFIG_DIR, ENCRYPTED_CONFIG_FILE
 )
+
+# Set project root for module imports
+_PROJECT_ROOT = Path(__file__).parent.parent.parent  # vibeStation_setup parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -228,14 +233,19 @@ class TepMCP(QWidget):
             self.log("Agent 작업을 입력하세요.")
             return
         self.log(f"[Agent] 실행: {user_input}")
-        result = subprocess.run(
-            [sys.executable, "-m", "vibeStation_setup.mcp_suver.main_agent", user_input],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        output = result.stdout if result.stdout else result.stderr
-        self.log(f"[Agent 결과]\n{output}")
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "vibeStation_setup.mcp_suver.main_agent", user_input],
+                cwd=str(_PROJECT_ROOT),
+                capture_output=True,
+                text=True,
+                timeout=60,
+                env=os.environ.copy()
+            )
+            output = result.stdout if result.stdout else result.stderr
+            self.log(f"[Agent 결과]\n{output}")
+        except Exception as e:
+            self.log_error(f"Agent 실행 중 오류: {str(e)}")
 
     def run_terminal_command(self):
         """터미널 명령 실행"""

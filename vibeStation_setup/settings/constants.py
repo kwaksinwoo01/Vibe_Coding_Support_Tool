@@ -8,12 +8,8 @@ from pathlib import Path
 from datetime import datetime
 
 # ============================================================================
-# Agent 및 파일 경로
+# File paths
 # ============================================================================
-
-# AGENT_PATH: main_agent.py 파일의 절대 경로
-# 사용자가 직접 설정 가능 (GUI에서도 변경 가능)
-AGENT_PATH = r"C:\Users\user\Documents\github\turbo-system\.github\agents\tool\main_agent.py"
 
 # FAVICON_PATH: favicon.ico 파일 경로
 FAVICON_PATH = r"C:\Users\user\Downloads\icon.ico"

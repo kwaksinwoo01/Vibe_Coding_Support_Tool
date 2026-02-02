@@ -49,7 +49,6 @@ def load_env_vars(config_file: Optional[Path] = None) -> dict:
         "REDIS_HOST": os.getenv("REDIS_HOST", "localhost"),
         "REDIS_PORT": int(os.getenv("REDIS_PORT", 6379)),
         "REDIS_DB": int(os.getenv("REDIS_DB", 0)),
-        "AGENT_PATH": os.getenv("AGENT_PATH", ""),
         "REPO_PATH": os.getenv("REPO_PATH", ""),
         "MAIN_DOC": os.getenv("MAIN_DOC", ""),
         "BRANCH": os.getenv("BRANCH", "main")
@@ -76,8 +75,6 @@ def load_env_vars(config_file: Optional[Path] = None) -> dict:
             env_vars["REPO_PATH"] = saved_config["repo_path"]
         if "branch" in saved_config:
             env_vars["BRANCH"] = saved_config["branch"]
-        if "agent_path" in saved_config:
-            env_vars["AGENT_PATH"] = saved_config["agent_path"]
     
     return env_vars
 

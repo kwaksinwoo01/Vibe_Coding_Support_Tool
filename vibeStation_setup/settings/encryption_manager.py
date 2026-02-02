@@ -157,8 +157,8 @@ class EncryptionManager:
     
     def save_config(self, config: Dict[str, Any], sensitive_keys: Optional[list] = None):
         """
-        설정을 암호화하여 저장 (.enc 바이너리 파일)
-        전체 JSON을 Fernet 암호화 (개별 값 암호화 없음)
+        설정을 암호화하여 저장 (.enc 바이너리 파일만 생성)
+        메모리에서 JSON 처리 후 바로 Fernet 암호화 → 파일 시스템에 평문 저장 없음
         
         Args:
             config: 저장할 설정 딕셔너리
@@ -168,13 +168,15 @@ class EncryptionManager:
             raise RuntimeError("암호화 매니저가 초기화되지 않았습니다")
         
         try:
-            # 전체 JSON을 평문으로 직렬화
+            # 1️⃣ 메모리에서만 JSON 생성 (파일 시스템에 쓰지 않음)
             payload = json.dumps(config, ensure_ascii=False).encode("utf-8")
+            logger.debug(f"메모리에서 JSON 생성: {len(payload)} bytes")
             
-            # 전체 페이로드를 Fernet 암호화 (단일 암호화)
+            # 2️⃣ 전체 페이로드를 Fernet 암호화
             encrypted_payload = self.cipher_suite.encrypt(payload)
+            logger.debug(f"Fernet 암호화 완료: {len(encrypted_payload)} bytes")
             
-            # 임시 파일에 먼저 쓰고 안전하게 교체
+            # 3️⃣ 임시 파일에 먼저 쓰고 안전하게 교체 (원자성 보장)
             tmp_path = self.encrypted_config_file.with_suffix(self.encrypted_config_file.suffix + ".tmp")
             with open(tmp_path, "wb") as f:
                 f.write(encrypted_payload)
@@ -183,6 +185,8 @@ class EncryptionManager:
             
             os.replace(tmp_path, self.encrypted_config_file)
             logger.info(f"✓ 암호화된 설정 저장됨: {self.encrypted_config_file}")
+            logger.info(f"  파일 크기: {self.encrypted_config_file.stat().st_size} bytes")
+            
         except Exception as e:
             logger.error(f"설정 저장 실패: {e}")
             raise
