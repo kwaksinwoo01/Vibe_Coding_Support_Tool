@@ -280,7 +280,6 @@ class EncryptionManager:
                 sensitive_keys = [
                     "github_token",
                     "workflow_secret",
-                    "redis_url",
                     "database_password",
                     "api_key"
                 ]

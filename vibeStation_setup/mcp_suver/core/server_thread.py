@@ -58,7 +58,7 @@ class ServerThread(QThread):
     기능:
     - MCP 프로토콜 기반 SSE 통신
     - 로그 데이터 수신 (/stream 엔드포인트)
-    - Redis 기반 체크포인팅
+    - SQLite 기반 데이터 저장 (Redis 제거됨)
     - 에이전트 작업 실행
     - 상태 모니터링
     """
@@ -71,7 +71,6 @@ class ServerThread(QThread):
         super().__init__()
         self.port = port
         self.app = None
-        self.redis_client = None
         self.checkpointer = None
         self._running = True
         self.server = None  # Uvicorn 서버 인스턴스 저장
@@ -214,10 +213,3 @@ class ServerThread(QThread):
                 self.log_signal.emit("[서버] Uvicorn 서버 종료 신호 전송")
             except Exception as e:
                 logger.warning(f"Uvicorn 서버 종료 오류: {e}")
-        
-        # Redis 정리
-        if self.redis_client:
-            try:
-                self.redis_client.close()
-            except Exception as e:
-                logger.warning(f"Redis 종료 오류: {e}")
