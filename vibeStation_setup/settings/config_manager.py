@@ -168,7 +168,7 @@ def load_encrypted_config(config_dir: Optional[Path] = None) -> Dict[str, Any]:
         >>> token = config.get("github_token")
     """
     if not ENCRYPTION_AVAILABLE:
-        print("⚠ 암호화 라이브러리를 사용할 수 없습니다.")
+        print("암호화 라이브러리를 사용할 수 없습니다.")
         return {}
     
     try:
