@@ -18,6 +18,7 @@ classification_engine.py
 
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime, timedelta
@@ -27,6 +28,10 @@ import re
 
 from routing_history import RoutingHistoryDB, RoutingRecord
 from database import DatabaseManager
+
+# Import centralized tier keywords
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config.tier_keywords import get_tier_keywords, get_tier_keywords_list, get_context_bonuses
 
 logger = logging.getLogger(__name__)
 
@@ -49,22 +54,12 @@ class ImprovedClassificationEngine:
         self.history_db = RoutingHistoryDB(db_root)
         self.db_manager = DatabaseManager(db_root)
         
-        # 개선된 키워드 - 문맥 기반 그룹화
+        # Use centralized tier keywords from tier_keywords.py module
+        # This ensures consistency across all classification modules
+        tier_keywords_dict = get_tier_keywords()
         self.base_keywords = {
-            "A": ["create", "plan", "wpd", "작업 계획", "생성", "작성"],
-            "B": ["execute", "perform", "run", "실행", "수행", "진행"],
-            "C": ["edit", "modify", "change", "수정", "변경", "편집"],
-            "D": ["error", "bug", "issue", "problem", "오류", "버그", "문제", "fail"],
-            "E": [
-                # 문서 관리 핵심 키워드
-                "save", "document", "mapping", "저장", "매핑",
-                "path", "location", "name", "rename", "classification",
-                "경로", "위치", "이름", "이름변경", "분류",
-                # 새로 추가: 문서 이동/재정렬 관련
-                "move", "relocate", "reorganize", "folder", "directory",
-                "migration", "guide", "structure", "organize"
-            ],
-            "F": []
+            tier: tier_keywords_dict[tier].get("keywords", [])
+            for tier in ["A", "B", "C", "D", "E", "F"]
         }
         
         # 컨텍스트 기반 가중치 (문장 구조 분석)
@@ -76,7 +71,7 @@ class ImprovedClassificationEngine:
             ]
         }
         
-        logger.info("[CLASSIFIER] Initialized with improved context analysis")
+        logger.info("[CLASSIFIER] Initialized with centralized tier keywords from tier_keywords.py")
     
     def classify(self, user_input: str, use_feedback: bool = True) -> ClassificationResult:
         """개선된 분류 로직"""

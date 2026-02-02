@@ -63,6 +63,10 @@ from models.core.reporting_models import (
 from models.core import AgentState, TierDState
 from common.github_reporter import get_github_reporter
 
+# Import centralized tier keywords
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config.tier_keywords import get_tier_keywords_list
+
 
 class IssueAnalysisEngine:
     """
@@ -672,13 +676,26 @@ def main(user_input: str, workspace_root: str = ".", error_context: Optional[Dic
     """
     engine = IssueAnalysisEngine(workspace_root)
     
-    # 문서 분석 트리거 감지
-    doc_keywords = [
-        "document", "문서", "incorrectly created", "잘못된 문서",
-        "merge", "병합", "duplicate", "중복", "wrong directory", "잘못된 경로"
-    ]
+    # Use centralized tier keywords for document-related detection
+    # Combine keywords from Tier C (edit/modify) and Tier E (document management)
+    tier_c_keywords = get_tier_keywords_list("C")
+    tier_e_keywords = get_tier_keywords_list("E")
     
-    is_document_issue = any(kw in user_input.lower() for kw in doc_keywords)
+    # Create combined document keywords list from relevant tier keywords
+    doc_keywords = []
+    doc_related_terms = ["document", "문서", "incorrectly", "created", "잘못", "생성",
+                        "merge", "병합", "duplicate", "중복", "wrong", "directory", "경로"]
+    
+    # Filter relevant keywords from Tier C and E
+    for kw in tier_c_keywords + tier_e_keywords:
+        if any(term in kw.lower() for term in ["document", "문서", "file", "파일", "merge", "병합", 
+                                                 "duplicate", "중복", "directory", "folder", "경로"]):
+            doc_keywords.append(kw)
+    
+    # Add specific phrases that indicate document issues
+    doc_keywords.extend(["incorrectly created", "잘못된 문서", "wrong directory", "잘못된 경로"])
+    
+    is_document_issue = any(kw.lower() in user_input.lower() for kw in doc_keywords)
     
     # 문서 경로 감지 (.md 파일)
     import re
