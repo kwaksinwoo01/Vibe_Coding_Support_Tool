@@ -4,6 +4,7 @@ Application-wide constants configuration
 """
 
 import os
+import sys
 from pathlib import Path
 from datetime import datetime
 
@@ -39,8 +40,13 @@ SERVER_HOST = "127.0.0.1"
 # ============================================================================
 
 # 로그 디렉토리
-LOG_DIR = Path(__file__).parent.parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
+if getattr(sys, 'frozen', False):
+    # exe 실행 시
+    LOG_DIR = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming')) / "vibeStation_setup" / "logs"
+else:
+    # 개발 시
+    LOG_DIR = Path(__file__).parent.parent / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # 로그 파일
 LOG_FILE = LOG_DIR / f"mcp_server_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -49,9 +55,14 @@ LOG_FILE = LOG_DIR / f"mcp_server_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log
 # 설정 파일 경로
 # ============================================================================
 
-# 설정 디렉토리
-CONFIG_DIR = Path(__file__).parent / "config"
-CONFIG_DIR.mkdir(exist_ok=True)
+# 설정 디렉토리 (exe 패키징 시 appdata 사용)
+if getattr(sys, 'frozen', False):
+    # exe 실행 시
+    CONFIG_DIR = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming')) / "vibeStation_setup" / "config"
+else:
+    # 개발 시
+    CONFIG_DIR = Path(__file__).parent / "config"
+CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 # 암호화된 설정 파일 (GitHub Token 등 저장)
 ENCRYPTED_CONFIG_FILE = CONFIG_DIR / "encrypted_config.enc"
