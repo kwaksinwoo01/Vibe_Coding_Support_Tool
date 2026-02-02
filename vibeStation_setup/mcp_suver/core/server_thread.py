@@ -93,11 +93,18 @@ class ServerThread(QThread):
             self.log_signal.emit(f"[서버] http://127.0.0.1:{self.port} 리스닝 시작")
             
             import uvicorn
+            
+            # Fix for exe packaging: Disable uvicorn's default logging configuration
+            # When packaged as exe, sys.stdout/sys.stderr can be None, causing
+            # AttributeError: 'NoneType' object has no attribute 'isatty'
+            # Solution: Use log_config=None to disable the default formatter
+            # and let the application handle logging via Python's logging module
             config = uvicorn.Config(
                 self.app, 
                 host="127.0.0.1", 
                 port=self.port, 
-                log_level="error"
+                log_level="error",
+                log_config=None  # Disable default logging config to avoid isatty() error in exe
             )
             self.server = uvicorn.Server(config)
             asyncio.run(self.server.serve())
