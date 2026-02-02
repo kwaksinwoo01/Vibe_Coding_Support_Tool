@@ -9,11 +9,14 @@ and human-in-the-loop support.
 New Features (v2.1):
 - Confidence-based routing with DecisionEngine
 - Automatic retry with exponential backoff
-- Circuit breaker pattern with Redis persistence
+- Circuit breaker pattern (in-memory, SQLite persistence via DB layer)
 - Policy-based decision rules
 - Comprehensive metrics collection
 - Enhanced human-in-the-loop with retry mechanism
 - Decision trace recording
+
+Note: Redis support has been removed. All persistence now uses SQLite via DB layer.
+Circuit breaker state is in-memory only for this version.
 
 Workflow:
 1. User Input -> Classification (via Tier F or keyword matching)
@@ -68,20 +71,13 @@ from .core.routing_engine import (
     RoutingValidator,
 )
 
-# Redis import with fallback
-try:
-    import redis
-
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
-    warnings.warn(
-        "Redis not available. Circuit breaker state will not persist across restarts."
-    )
-
 
 class CircuitBreakerState:
-    """Circuit breaker state for a tier with Redis persistence"""
+    """Circuit breaker state for a tier (in-memory only, SQLite persistence handled by DB layer)
+    
+    Note: Redis support removed. Circuit breaker state is now in-memory only.
+    For persistent state across restarts, use the SQLite database layer in vibeStation_setup/DB/
+    """
 
     CLOSED = "CLOSED"  # Normal operation
     OPEN = "OPEN"  # Fast-fail mode
@@ -92,7 +88,6 @@ class CircuitBreakerState:
         tier: str,
         failure_threshold: int = 5,
         cooldown_seconds: int = 60,
-        redis_client: Optional[Any] = None,
     ):
         self.tier = tier
         self.state = self.CLOSED
@@ -101,51 +96,7 @@ class CircuitBreakerState:
         self.cooldown_seconds = cooldown_seconds
         self.last_failure_time: Optional[float] = None
         self.last_success_time: Optional[float] = None
-        self.redis_client = redis_client
         self._lock = Lock()
-
-        # Load from Redis if available
-        if self.redis_client:
-            self._load_from_redis()
-
-    def _redis_key(self) -> str:
-        """Generate Redis key for this circuit breaker"""
-        return f"circuit_breaker:{self.tier}"
-
-    def _load_from_redis(self):
-        """Load state from Redis"""
-        try:
-            key = self._redis_key()
-            data = self.redis_client.get(key)
-            if data:
-                state_dict = json.loads(data)
-                self.state = state_dict.get("state", self.CLOSED)
-                self.failure_count = state_dict.get("failure_count", 0)
-                self.last_failure_time = state_dict.get("last_failure_time")
-                self.last_success_time = state_dict.get("last_success_time")
-        except Exception as e:
-            print(f"[CIRCUIT_BREAKER] Failed to load state from Redis: {e}")
-
-    def _save_to_redis(self):
-        """Save state to Redis"""
-        if not self.redis_client:
-            return
-
-        try:
-            key = self._redis_key()
-            state_dict = {
-                "tier": self.tier,
-                "state": self.state,
-                "failure_count": self.failure_count,
-                "last_failure_time": self.last_failure_time,
-                "last_success_time": self.last_success_time,
-                "timestamp": datetime.now().isoformat(),
-            }
-            self.redis_client.set(key, json.dumps(state_dict))
-            # Set expiration to 24 hours to avoid stale data
-            self.redis_client.expire(key, 86400)
-        except Exception as e:
-            print(f"[CIRCUIT_BREAKER] Failed to save state to Redis: {e}")
 
     def record_success(self):
         """Record successful execution"""
@@ -157,8 +108,6 @@ class CircuitBreakerState:
                 # Success in half-open closes circuit
                 self.state = self.CLOSED
 
-            self._save_to_redis()
-
     def record_failure(self):
         """Record failed execution"""
         with self._lock:
@@ -167,8 +116,6 @@ class CircuitBreakerState:
 
             if self.failure_count >= self.failure_threshold:
                 self.state = self.OPEN
-
-            self._save_to_redis()
 
     def can_execute(self) -> bool:
         """Check if tier can execute (circuit not open)"""
@@ -185,7 +132,6 @@ class CircuitBreakerState:
                 if elapsed >= self.cooldown_seconds:
                     # Enter half-open state to test
                     self.state = self.HALF_OPEN
-                    self._save_to_redis()
                     return True
 
             return False
@@ -196,7 +142,6 @@ class CircuitBreakerState:
             self.state = self.CLOSED
             self.failure_count = 0
             self.last_failure_time = None
-            self._save_to_redis()
 
 
 class HumanDecisionQueue:
@@ -320,22 +265,19 @@ class MainAgent:
         enable_circuit_breaker: bool = True,
         enable_metrics: bool = True,
         policy_config_path: Optional[str] = None,
-        redis_host: str = "localhost",
-        redis_port: int = 6379,
-        redis_db: int = 0,
     ):
         """
         Initialize main agent.
 
+        Note: Redis support removed. All persistence now uses SQLite via DB layer.
+        Circuit breaker state is in-memory only.
+
         Args:
             workspace_root: Root directory of workspace
             enable_decision_engine: Enable intelligent routing decisions
-            enable_circuit_breaker: Enable circuit breaker pattern
+            enable_circuit_breaker: Enable circuit breaker pattern (in-memory)
             enable_metrics: Enable metrics collection
-            policy_config_path: Path to policy configuration JSON
-            redis_host: Redis server host
-            redis_port: Redis server port
-            redis_db: Redis database number
+            policy_config_path: Path to policy configuration JSON (decision_policies.json)
         """
         self.workspace_root = workspace_root
         self.execution_history: List[Dict[str, Any]] = []
@@ -343,26 +285,6 @@ class MainAgent:
         
         # Multi-tier routing: Store alternative tiers with valid confidence
         self._alternative_tiers: List[Tuple[str, float]] = []
-
-        # Redis client for circuit breaker persistence
-        self.redis_client = None
-        if REDIS_AVAILABLE and enable_circuit_breaker:
-            try:
-                self.redis_client = redis.Redis(
-                    host=redis_host,
-                    port=redis_port,
-                    db=redis_db,
-                    decode_responses=True,
-                    socket_timeout=2,
-                    socket_connect_timeout=2,
-                )
-                # Test connection
-                self.redis_client.ping()
-                print(f"[MAIN_AGENT] Redis connected: {redis_host}:{redis_port}")
-            except Exception as e:
-                print(f"[MAIN_AGENT] Redis connection failed: {e}")
-                print(f"[MAIN_AGENT] Falling back to in-memory circuit breaker")
-                self.redis_client = None
 
         # Decision engine
         self.enable_decision_engine = enable_decision_engine
@@ -373,7 +295,7 @@ class MainAgent:
         else:
             self.decision_engine = None
 
-        # Policy engine
+        # Policy engine - uses decision_policies.json
         if policy_config_path is None:
             # Use default config path
             policy_config_path = str(
@@ -382,13 +304,11 @@ class MainAgent:
 
         self.policy_engine = PolicyEngine(policy_config_path)
 
-        # Circuit breakers (one per tier) with Redis persistence
+        # Circuit breakers (one per tier) - in-memory only
         self.enable_circuit_breaker = enable_circuit_breaker
         self.circuit_breakers: Dict[str, CircuitBreakerState] = {}
         for tier in self.TIER_MODULES.keys():
-            self.circuit_breakers[tier] = CircuitBreakerState(
-                tier, redis_client=self.redis_client if enable_circuit_breaker else None
-            )
+            self.circuit_breakers[tier] = CircuitBreakerState(tier)
 
         # Metrics
         self.enable_metrics = enable_metrics
@@ -416,12 +336,6 @@ class MainAgent:
     def shutdown(self):
         """Shutdown the agent and cleanup resources"""
         print("[MAIN_AGENT] Shutting down...")
-        if self.redis_client:
-            try:
-                self.redis_client.close()
-                print("[MAIN_AGENT] Redis connection closed")
-            except Exception as e:
-                print(f"[MAIN_AGENT] Error closing Redis: {e}")
         print("[MAIN_AGENT] Shutdown complete")
 
     # ========================================================================
@@ -1522,28 +1436,20 @@ def main():
 
     if len(sys.argv) < 2:
         print(
-            "Usage: python main_agent.py '<user_input>' [workspace_root] [redis_host] [redis_port]"
+            "Usage: python main_agent.py '<user_input>' [workspace_root]"
         )
-        print("Example: python main_agent.py 'Create a work plan' . localhost 6379")
+        print("Example: python main_agent.py 'Create a work plan' .")
         sys.exit(1)
 
     user_input = sys.argv[1]
     workspace_root = sys.argv[2] if len(sys.argv) > 2 else "."
-    redis_host = (
-        sys.argv[3] if len(sys.argv) > 3 else os.getenv("REDIS_HOST", "localhost")
-    )
-    redis_port = (
-        int(sys.argv[4]) if len(sys.argv) > 4 else int(os.getenv("REDIS_PORT", "6379"))
-    )
 
-    # Create agent with Redis configuration
+    # Create agent (Redis parameters removed)
     agent = MainAgent(
         workspace_root=workspace_root,
         enable_decision_engine=True,
         enable_circuit_breaker=True,
         enable_metrics=True,
-        redis_host=redis_host,
-        redis_port=redis_port,
     )
 
     # Execute

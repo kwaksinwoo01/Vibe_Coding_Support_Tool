@@ -33,6 +33,8 @@ def load_env_vars(config_file: Optional[Path] = None) -> dict:
     환경 변수 통합 로드
     JSON 설정 파일과 환경 변수를 결합하여 반환
     
+    Note: Redis support removed - now using SQLite for all persistence
+    
     Args:
         config_file: JSON 설정 파일 경로 (선택사항)
     
@@ -45,10 +47,6 @@ def load_env_vars(config_file: Optional[Path] = None) -> dict:
     env_vars = {
         "GITHUB_TOKEN": os.getenv("GITHUB_TOKEN", ""),
         "WORKFLOW_SHARED_SECRET": os.getenv("WORKFLOW_SHARED_SECRET", ""),
-        "REDIS_URL": os.getenv("REDIS_URL", "redis://localhost:6379/0"),
-        "REDIS_HOST": os.getenv("REDIS_HOST", "localhost"),
-        "REDIS_PORT": int(os.getenv("REDIS_PORT", 6379)),
-        "REDIS_DB": int(os.getenv("REDIS_DB", 0)),
         "REPO_PATH": os.getenv("REPO_PATH", ""),
         "MAIN_DOC": os.getenv("MAIN_DOC", ""),
         "BRANCH": os.getenv("BRANCH", "main")
@@ -69,8 +67,6 @@ def load_env_vars(config_file: Optional[Path] = None) -> dict:
             env_vars["GITHUB_TOKEN"] = saved_config["github_token"]
         if "workflow_secret" in saved_config:
             env_vars["WORKFLOW_SHARED_SECRET"] = saved_config["workflow_secret"]
-        if "redis_url" in saved_config:
-            env_vars["REDIS_URL"] = saved_config["redis_url"]
         if "repo_path" in saved_config:
             env_vars["REPO_PATH"] = saved_config["repo_path"]
         if "branch" in saved_config:
