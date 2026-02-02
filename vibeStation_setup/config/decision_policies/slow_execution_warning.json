@@ -1,0 +1,18 @@
+{
+  "name": "slow_execution_warning",
+  "description": "Flag slow executions for performance review",
+  "condition": {
+    "field": "execution_time_ms",
+    "operator": ">",
+    "value": 10000
+  },
+  "action": {
+    "metadata": {
+      "reason": "Slow execution detected",
+      "threshold_ms": 10000,
+      "flag": "performance_review_needed"
+    }
+  },
+  "priority": 60,
+  "enabled": true
+}

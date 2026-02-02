@@ -1,0 +1,19 @@
+{
+  "name": "cost_limit_fallback",
+  "description": "Use alternative tier when estimated cost exceeds budget",
+  "condition": {
+    "field": "estimated_cost",
+    "operator": ">",
+    "value": 100.0
+  },
+  "action": {
+    "use_alternative": true,
+    "alternative_tier": "E",
+    "metadata": {
+      "reason": "Cost exceeds budget",
+      "cost_limit": 100.0
+    }
+  },
+  "priority": 90,
+  "enabled": true
+}

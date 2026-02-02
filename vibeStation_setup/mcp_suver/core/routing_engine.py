@@ -26,6 +26,7 @@ from ..models.core.reporting_models import (
     ResolutionStrategy,
     RoutingInfo,
 )
+from ...config import get_tier_keywords
 
 
 class IRoutingStrategy(ABC):
@@ -739,73 +740,7 @@ class RoutingEngine:
                 return ("B", step_info["confidence"])
         
         # Step 2: Traditional keyword matching
-        tier_keywords = {
-            "A": [
-                "create",
-                "plan",
-                "새로운",
-                "작성",
-                "wpd 생성",
-                "work plan",
-                "make plan",
-                "generate plan",
-                "start plan",
-                "작업 계획 생성",
-            ],
-            "B": [
-                "perform",
-                "execute",
-                "run",
-                "실행",
-                "진행",
-                "작업 계획 실행",
-                "do task",
-                "complete task",
-                "implement",
-                "작업 수행",
-            ],
-            "C": [
-                "change",
-                "modify",
-                "edit",
-                "수정",
-                "변경",
-                "마일스톤",
-                "update",
-                "revise",
-                "alter",
-                "계획 변경",
-            ],
-            "D": [
-                "error",
-                "issue",
-                "fails",
-                "failure",
-                "오류",
-                "문제",
-                "작동 안",
-                "bug",
-                "broken",
-                "not working",
-                "debug",
-                "문제 분석",
-            ],
-            "E": [
-                "save",
-                "mapping",
-                "저장",
-                "동기화",
-                "데이터 클래스",
-                "필드",
-                "document",
-                "reflect",
-                "update mapping",
-                "문서 관리",
-                "read file",
-                "read",
-                "파일 읽기",
-            ],
-        }
+        tier_keywords = get_tier_keywords()
 
         user_input_lower = user_input.lower()
         tier_scores = {}

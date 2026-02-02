@@ -667,6 +667,16 @@ class TepDM(QWidget):
     
     def on_setup_completed(self, setup_data):
         """Handle setup completion."""
+        # Remove Setup Wizard tab
+        for i in range(self.tabs.count()):
+            if "Setup Wizard" in self.tabs.tabText(i):
+                self.tabs.removeTab(i)
+                break
+        
+        # Switch to Instructions Editor
+        if self.tabs.count() > 0:
+            self.tabs.setCurrentIndex(0)
+        
         # Show success message
         QMessageBox.information(
             self, 
@@ -674,8 +684,7 @@ class TepDM(QWidget):
             ".github/copilot-instructions.md 파일이 성공적으로 생성되었습니다!"
         )
         
-        # Switch back to main UI
-        self.init_ui()
+        # Do not call init_ui() again
         
     def init_ui(self):
         """Initialize the user interface."""
@@ -702,10 +711,7 @@ class TepDM(QWidget):
         self.editor_widget = InstructionsEditorWidget(self.yaml_handler)
         self.tabs.addTab(self.editor_widget, " Instructions Editor")
 
-        # 2. Setup Wizard tab
-        self.setup_widget = SetupWizardWidget()
-        self.setup_widget.setup_completed.connect(self.on_setup_completed)
-        self.tabs.addTab(self.setup_widget, "Setup Wizard")
+        # 2. Setup Wizard tab - removed, added dynamically in show_setup_wizard
 
         # 3. Info tab
         info_widget = self.create_info_widget()
@@ -722,12 +728,13 @@ class TepDM(QWidget):
     def save_current_tab(self):
         """Save content of current tab."""
         current_index = self.tabs.currentIndex()
-        if current_index == 0:  # Instructions Editor
+        current_text = self.tabs.tabText(current_index)
+        if "Instructions Editor" in current_text:
             self.editor_widget.save_instructions_content()
-        elif current_index == 1:  # Setup Wizard
+        elif "Setup Wizard" in current_text:
             # Setup wizard has its own save button
             pass
-        elif current_index == 2:  # Info
+        elif "Info" in current_text:
             # Info tab is read-only
             pass
     

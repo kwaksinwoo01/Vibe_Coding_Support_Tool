@@ -50,7 +50,7 @@ class EncryptionManager:
         if master_key:
             try:
                 self.cipher_suite = Fernet(master_key)
-                logger.info("✓ 암호화 매니저 초기화됨")
+                logger.info("암호화 매니저 초기화됨")
             except Exception as e:
                 logger.error(f"암호화 스위트 초기화 실패: {e}")
     
@@ -68,7 +68,7 @@ class EncryptionManager:
         if env_key:
             try:
                 key_bytes = env_key.encode() if isinstance(env_key, str) else env_key
-                logger.info(f"✓ 환경 변수에서 마스터 키 로드됨 (길이: {len(key_bytes)})")
+                logger.info(f"환경 변수에서 마스터 키 로드됨 (길이: {len(key_bytes)})")
                 
                 # 이미 .key 파일이 있으면 일치성 확인
                 if self.key_file.exists():
@@ -91,7 +91,7 @@ class EncryptionManager:
             try:
                 with open(self.key_file, 'rb') as f:
                     key = f.read()
-                logger.info(f"✓ .key 파일에서 마스터 키 로드됨 (길이: {len(key)})")
+                logger.info(f".key 파일에서 마스터 키 로드됨 (길이: {len(key)})")
                 return key
             except Exception as e:
                 logger.error(f".key 파일 로드 실패: {e}")
@@ -106,7 +106,7 @@ class EncryptionManager:
                 f.write(new_key)
             os.chmod(self.key_file, 0o600)  # Unix: rw------- 권한
             
-            logger.info(f"✓ 새 마스터 키 생성됨: {self.key_file}")
+            logger.info(f"새 마스터 키 생성됨: {self.key_file}")
             logger.warning(f"  환경 변수에도 저장하세요: {self.master_key_env}={new_key.decode()}")
             
             return new_key
@@ -184,7 +184,7 @@ class EncryptionManager:
                 os.fsync(f.fileno())
             
             os.replace(tmp_path, self.encrypted_config_file)
-            logger.info(f"✓ 암호화된 설정 저장됨: {self.encrypted_config_file}")
+            logger.info(f"암호화된 설정 저장됨: {self.encrypted_config_file}")
             logger.info(f"  파일 크기: {self.encrypted_config_file.stat().st_size} bytes")
             
         except Exception as e:
@@ -216,7 +216,7 @@ class EncryptionManager:
             # JSON 파싱하여 평문 딕셔너리 반환
             config = json.loads(decrypted_payload.decode("utf-8"))
             
-            logger.info(f"✓ 암호화된 설정 로드됨: {self.encrypted_config_file}")
+            logger.info(f"암호화된 설정 로드됨: {self.encrypted_config_file}")
             return config
         
         except json.JSONDecodeError as e:
@@ -258,7 +258,7 @@ class EncryptionManager:
             config[key] = value
             sensitive_keys = [key] if is_sensitive else []
             self.save_config(config, sensitive_keys=sensitive_keys)
-            logger.info(f"✓ 설정값 저장됨: {key}")
+            logger.info(f"설정값 저장됨: {key}")
             return True
         except Exception as e:
             logger.error(f"설정값 저장 실패 ({key}): {e}")
@@ -304,7 +304,7 @@ class EncryptionManager:
             config.update(updates)
             
             self.save_config(config, sensitive_keys=sensitive_keys)
-            logger.info(f"✓ {len(updates)}개 설정값 업데이트됨")
+            logger.info(f"{len(updates)}개 설정값 업데이트됨")
             return True
         except Exception as e:
             logger.error(f"설정값 업데이트 실패: {e}")
@@ -349,7 +349,7 @@ class EncryptionManager:
                 else:
                     decrypted_config[key] = value
 
-            logger.info(f"✓ 레거시 암호화 설정 로드됨: {legacy_file}")
+            logger.info(f"레거시 암호화 설정 로드됨: {legacy_file}")
             return decrypted_config
         except Exception as e:
             logger.error(f"레거시 설정 로드 실패: {e}")

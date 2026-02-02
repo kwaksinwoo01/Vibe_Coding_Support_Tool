@@ -1,0 +1,18 @@
+{
+  "name": "tier_b_to_e_chain",
+  "description": "Auto-chain successful Tier B to Tier E",
+  "condition": {
+    "field": "tier",
+    "operator": "==",
+    "value": "B"
+  },
+  "action": {
+    "use_alternative": true,
+    "alternative_tier": "E",
+    "metadata": {
+      "reason": "Standard B→E workflow chain"
+    }
+  },
+  "priority": 50,
+  "enabled": true
+}

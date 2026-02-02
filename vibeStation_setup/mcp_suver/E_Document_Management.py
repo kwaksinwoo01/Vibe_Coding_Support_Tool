@@ -24,6 +24,20 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
 
+# Setup UTF-8 encoding globally to prevent cp949 errors
+if sys.stdout:
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if sys.stderr:
+    try:
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 from models.core import AgentState, TierEState, TaskContext
@@ -399,6 +413,104 @@ class DocumentManagementEngine:
         return None
     
     # ========== Part Number Extraction & Validation ==========
+    
+    def classify_document_issue(self, doc_path: Optional[str], resolved_path: Optional[Path]) -> Dict[str, Any]:
+        """
+        Classify document issues to determine proper routing
+        
+        Decision tree:
+        1. Missing metadata (Part Number, wpd_grade, Version)? → Tier C (add metadata)
+        2. Wrong metadata values? → Tier C (correct metadata)
+        3. Wrong location/content? → Tier C (merge/move)
+        4. Outdated document? → Compare with latest, keep valid content
+        5. Other cases? → Document management workflow (L0→L1→L2 similarity check)
+        
+        Args:
+            doc_path: Original document path string
+            resolved_path: Resolved Path object (if found)
+        
+        Returns:
+            Classification dict with issue_type and recommended action
+        """
+        classification = {
+            "issue_type": "unknown",
+            "action": "none",
+            "tier": None,
+            "reason": "",
+            "missing_fields": [],
+            "suggestions": []
+        }
+        
+        if not doc_path:
+            classification.update({
+                "issue_type": "no_document_path",
+                "action": "request_clarification",
+                "tier": "F",
+                "reason": "No document path provided in user input"
+            })
+            return classification
+        
+        # Check if document exists
+        if not resolved_path or not resolved_path.exists():
+            classification.update({
+                "issue_type": "document_not_found",
+                "action": "create_or_locate",
+                "tier": "A",
+                "reason": f"Document not found: {doc_path}",
+                "suggestions": ["Create new document", "Verify document path", "Check repository settings"]
+            })
+            return classification
+        
+        # Read document content to check for required metadata
+        try:
+            content = resolved_path.read_text(encoding='utf-8')
+            
+            # Check for required metadata fields
+            missing_fields = []
+            
+            # Check Part Number pattern
+            if not re.search(r'P(\d+)', doc_path) and not re.search(r'\*\*Part\s*Number\*\*:\s*P?\d+', content, re.IGNORECASE):
+                missing_fields.append("Part Number")
+            
+            # Check wpd_grade
+            if not re.search(r'\*\*WPD[_\s]*grade\*\*:\s*L[0-3]', content, re.IGNORECASE):
+                missing_fields.append("wpd_grade")
+            
+            # Check Version
+            if not re.search(r'\*\*Version\*\*:\s*v?\d+\.\d+\.\d+', content, re.IGNORECASE):
+                missing_fields.append("Version")
+            
+            if missing_fields:
+                classification.update({
+                    "issue_type": "missing_metadata",
+                    "action": "add_metadata",
+                    "tier": "C",
+                    "reason": f"Document lacks required metadata: {', '.join(missing_fields)}",
+                    "missing_fields": missing_fields,
+                    "suggestions": [
+                        f"Add {field} to document header" for field in missing_fields
+                    ]
+                })
+                return classification
+            
+            # If all metadata exists, this is a general document management task
+            classification.update({
+                "issue_type": "document_management",
+                "action": "manage_document",
+                "tier": "E",
+                "reason": "Document has all required metadata - proceeding with management"
+            })
+            
+        except Exception as e:
+            self.log(f"[ERROR] Failed to read document: {e}", "ERROR")
+            classification.update({
+                "issue_type": "read_error",
+                "action": "check_permissions",
+                "tier": "F",
+                "reason": f"Cannot read document: {e}"
+            })
+        
+        return classification
     
     def extract_part_number_from_modified_doc(self) -> Optional[int]:
         """
@@ -955,16 +1067,117 @@ Implementation details will be added as work progresses.
             # ===== NORMAL MODE: Document management =====
             self.log("\n[NORMAL MODE] Standard document management")
             
-            # Step 1: Extract Part Number
-            part_num = self.extract_part_number_from_modified_doc()
-            if part_num is None:
-                self.log("[WARNING] Cannot extract Part Number - routing to Tier C")
-                state = AgentState.create_failure(
+            # Step 1: Discover and classify document
+            doc_path = self.discover_document_from_user_input()
+            resolved_path = None
+            if doc_path:
+                resolved_path = self.resolve_document_location(doc_path)
+                if resolved_path:
+                    self.previous_payload["resolved_document_path"] = str(resolved_path)
+            
+            # Step 2: Classify document issue
+            classification = self.classify_document_issue(doc_path, resolved_path)
+            
+            self.log(f"\n[CLASSIFICATION] Issue Type: {classification['issue_type']}")
+            self.log(f"  Recommended Action: {classification['action']}")
+            self.log(f"  Recommended Tier: {classification['tier']}")
+            self.log(f"  Reason: {classification['reason']}")
+            
+            if classification.get('missing_fields'):
+                self.log(f"  Missing Fields: {', '.join(classification['missing_fields'])}")
+            if classification.get('suggestions'):
+                for suggestion in classification['suggestions']:
+                    self.log(f"  - {suggestion}")
+            
+            # Step 3: Route based on classification
+            if classification['tier'] == 'C':
+                # Document needs correction/formatting → Route to Tier C
+                state = AgentState.create_success(
                     tier=self.tier,
-                    error_msg="Cannot extract Part Number from modified document",
-                    logic_summary="Insufficient information to route - returning to Tier C for clarification"
+                    logic_summary=f"Document issue detected: {classification['reason']}. Routing to Tier C for correction.",
+                    payload={
+                        "document_path": doc_path,
+                        "resolved_path": str(resolved_path) if resolved_path else None,
+                        "classification": classification,
+                        "action_required": classification['action'],
+                        "missing_fields": classification.get('missing_fields', [])
+                    },
+                    next_node="C"
                 )
-                state.next_node = "C"
+                
+                state.decision_trace.append({
+                    "type": "tier_e_classification",
+                    "classification": classification,
+                    "routing_decision": "C",
+                    "execution_log": self.execution_log[-10:] if len(self.execution_log) > 10 else self.execution_log
+                })
+                
+                return state
+            
+            elif classification['tier'] == 'A':
+                # Document not found → Route to Tier A to create
+                state = AgentState.create_success(
+                    tier=self.tier,
+                    logic_summary=f"Document not found: {classification['reason']}. Routing to Tier A for document creation.",
+                    payload={
+                        "document_path": doc_path,
+                        "classification": classification,
+                        "action_required": "create_document"
+                    },
+                    next_node="A"
+                )
+                return state
+            
+            elif classification['tier'] == 'F':
+                # Unknown issue → Route to Tier F
+                state = AgentState.create_success(
+                    tier=self.tier,
+                    logic_summary=f"Unable to classify document issue: {classification['reason']}. Routing to Tier F for human review.",
+                    payload={
+                        "document_path": doc_path,
+                        "classification": classification
+                    },
+                    next_node="F"
+                )
+                return state
+            
+            # Step 4: If classification says proceed with E, extract Part Number
+            self.log("\n[PROCEED] Document has required metadata - extracting Part Number")
+            part_num = self.extract_part_number_from_modified_doc()
+            # Step 4: If classification says proceed with E, extract Part Number
+            self.log("\n[PROCEED] Document has required metadata - extracting Part Number")
+            part_num = self.extract_part_number_from_modified_doc()
+            
+            if part_num is None:
+                self.log("[WARN] Part Number extraction failed despite metadata check")
+                self.log("  → This indicates a formatting issue - routing to Tier C")
+                
+                # Even if metadata exists, Part Number pattern doesn't match
+                # This is still a Tier C issue (formatting correction needed)
+                state = AgentState.create_success(
+                    tier=self.tier,
+                    logic_summary=(
+                        "Part Number pattern not recognized in document. "
+                        "Document may have metadata but in wrong format. "
+                        "Routing to Tier C to standardize Part Number format (e.g., 'P1', 'P2.1', etc.)."
+                    ),
+                    payload={
+                        "document_path": doc_path,
+                        "resolved_path": str(resolved_path) if resolved_path else None,
+                        "issue_type": "part_number_format_invalid",
+                        "action": "standardize_part_number_format",
+                        "expected_pattern": r"P(\d+) or P(\d+)\.(\d+)"
+                    },
+                    next_node="C"
+                )
+                
+                state.decision_trace.append({
+                    "type": "tier_e_part_number_format_issue",
+                    "document_path": doc_path,
+                    "issue": "Part Number pattern mismatch",
+                    "execution_log": self.execution_log[-5:] if len(self.execution_log) > 5 else self.execution_log
+                })
+                
                 return state
             
             self.log(f"[OK] Extracted Part Number: {part_num}")

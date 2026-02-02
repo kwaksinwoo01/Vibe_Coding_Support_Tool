@@ -10,13 +10,13 @@ import os
 import sys
 from pathlib import Path
 
-from PyQt6.QtWidgets import (QMainWindow, QTabWidget, QWidget, QVBoxLayout, QGroupBox, 
+from PyQt6.QtWidgets import (QMainWindow, QTabWidget, QWidget, QVBoxLayout, QGroupBox, QMenuBar,
                              QHBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox)
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from .settings_dialog import SettingsDialog
 from .tab_dm import TepDM
-from .tep_mcp import TepMCP
+from .tep_mcp_run import TepMCP
 from .tab_mcp_log import MCPLogTab
 from mcp_suver.core.server_thread import ServerThread
 from settings.config_manager import load_env_vars, ENCRYPTION_AVAILABLE
@@ -90,11 +90,9 @@ class MainWindow(QMainWindow):
         """UI 초기화"""
         self.setWindowTitle("코딩에이전트 자동 문서관리 v1.0")
         self.setGeometry(100, 100, 1000, 700)
-
-        # 메뉴바 - MainWindow에서만 생성 (SINGLE POINT OF MENUBAR CREATION)
-        # 탭 컴포넌트에서는 menubar를 생성하지 않음
-        menu_bar = self.menuBar()
-        settings_menu = menu_bar.addMenu("설정")
+        self.menubar = QMenuBar()
+        self.setMenuBar(self.menubar)
+        settings_menu = self.menubar.addMenu("설정")
         settings_action = settings_menu.addAction("환경설정")
         settings_action.triggered.connect(self.show_settings_dialog)
         

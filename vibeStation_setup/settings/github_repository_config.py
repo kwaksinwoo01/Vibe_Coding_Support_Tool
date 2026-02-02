@@ -354,7 +354,7 @@ class GitHubRepositoryConfig:
             with urllib.request.urlopen(request, timeout=5) as response:
                 data = json.loads(response.read().decode('utf-8'))
                 login = data.get('login', 'Unknown')
-                print(f"[Token 검증] ✓ Token 유효함! (로그인: {login})")
+                print(f"[Token 검증] Token 유효함! (로그인: {login})")
                 return True
         except urllib.error.HTTPError as e:
             if e.code == 401:

@@ -304,7 +304,7 @@ class SettingsDialog(QDialog):
 
         token = self.github_token_input.text().strip()
         if not token:
-            self.log("⚠ GitHub Token을 입력해야 저장소를 확인할 수 있습니다.")
+            self.log("GitHub Token을 입력해야 저장소를 확인할 수 있습니다.")
             self.log("  Token 입력 후 다시 시도하세요.")
             return
 
@@ -332,7 +332,7 @@ class SettingsDialog(QDialog):
         self.log(f"[GitHub] 저장소 연결 시도: {repo_path}")
         
         if self.github_repo_config.parse_repository(repo_path):
-            self.log(f"✓ GitHub 저장소 연결 성공: {self.github_repo_config.owner}/{self.github_repo_config.repo_name}")
+            self.log(f"GitHub 저장소 연결 성공: {self.github_repo_config.owner}/{self.github_repo_config.repo_name}")
             self.log(f"  타입: {self.github_repo_config.repo_type}")
             self.repo_info_label.setText(
                 f"저장소: {self.github_repo_config.owner}/{self.github_repo_config.repo_name} "
@@ -354,7 +354,7 @@ class SettingsDialog(QDialog):
                 # 최근 5개만 표시
                 top_branches = branches[:5]
                 
-                self.log(f"✓ 활성 브랜치 총 {len(branches)}개 발견 (최근 5개 표시):")
+                self.log(f"활성 브랜치 총 {len(branches)}개 발견 (최근 5개 표시):")
                 for i, branch in enumerate(top_branches, 1):
                     self.log(f"  {i}. {branch}")
                 
@@ -378,10 +378,10 @@ class SettingsDialog(QDialog):
                 # 초기 브랜치 적용 (시그널 활성화 후 수동 호출)
                 initial_branch = self.branch_combo.currentText()
                 self.github_repo_config.set_branch(initial_branch)
-                self.log(f"✓ 브랜치 선택 준비 완료: {initial_branch}")
+                self.log(f"브랜치 선택 준비 완료: {initial_branch}")
                 self.log("  팁: 다른 브랜치는 콤보박스에서 직접 입력할 수 있습니다")
             else:
-                self.log("⚠ 경고: 브랜치를 조회할 수 없습니다")
+                self.log("경고: 브랜치를 조회할 수 없습니다")
                 self.log("  해결책:")
                 self.log("  1. GitHub Token을 입력하세요")
                 self.log("  2. Token 스코프를 확인하세요: repo 또는 public_repo")
@@ -420,10 +420,10 @@ class SettingsDialog(QDialog):
             # 메인 문서 경로가 있으면 자동 검증
             main_doc = self.main_doc_input.text().strip()
             if main_doc:
-                self.log(f"✓ 메인 문서 자동 검증 시작: {main_doc}")
+                self.log(f"메인 문서 자동 검증 시작: {main_doc}")
                 self.validate_main_document()
         else:
-            self.log(f"⚠ 브랜치 선택됨: {branch_name} (저장소 먼저 연결하세요)")
+            self.log(f"브랜치 선택됨: {branch_name} (저장소 먼저 연결하세요)")
 
 
     def validate_main_document(self):
@@ -480,16 +480,16 @@ class SettingsDialog(QDialog):
                 with urllib.request.urlopen(request, timeout=5) as response:
                     if response.status == 200:
                         content = response.read().decode('utf-8')
-                        self.log(f"  ✓ 파일 발견! (브랜치: {branch}, 크기: {len(content)} bytes)")
+                        self.log(f"  파일 발견! (브랜치: {branch}, 크기: {len(content)} bytes)")
                         
                         # 브랜치 자동 변경
                         if branch != current_branch:
                             self.branch_combo.setCurrentText(branch)
                             self.github_repo_config.set_branch(branch)
-                            self.log(f"  ✓ 브랜치 자동 변경: {current_branch} → {branch}")
+                            self.log(f"  브랜치 자동 변경: {current_branch} → {branch}")
                         
                         self.log(f"")
-                        self.log(f"✓✓✓ 검증 성공! ✓✓✓")
+                        self.log(f"✓✓검증 성공! ✓✓✓")
                         self.log(f"============================================================")
                         return True
             except urllib.error.HTTPError as e:
@@ -574,13 +574,13 @@ class SettingsDialog(QDialog):
                     for file_path in markdown_files:
                         self.doc_results_list.addItem(file_path)
 
-                    self.log(f"\n✓ 발견된 문서 파일 ({len(markdown_files)}개)")
+                    self.log(f"\n발견된 문서 파일 ({len(markdown_files)}개)")
 
                     # 첫 번째 항목 기본 선택
                     first_file = markdown_files[0]
                     self.doc_results_list.setCurrentRow(0)
                     self.main_doc_input.setText(first_file)
-                    self.log(f"✓ 기본 선택: {first_file}")
+                    self.log(f"기본 선택: {first_file}")
                     self.log("  리스트에서 다른 문서를 선택한 뒤 '선택 적용'을 누르세요")
                 else:
                     self.log(f"✗ 마크다운 문서를 찾을 수 없습니다.")
@@ -601,7 +601,7 @@ class SettingsDialog(QDialog):
 
         selected_path = item.text()
         self.main_doc_input.setText(selected_path)
-        self.log(f"✓ 문서 선택됨: {selected_path}")
+        self.log(f"문서 선택됨: {selected_path}")
 
     def _on_document_double_clicked(self, item):
         """리스트 항목 더블클릭 이벤트 핸들러"""
@@ -620,7 +620,7 @@ class SettingsDialog(QDialog):
             selected_path = current_item.text().strip()
             if selected_path:
                 self.main_doc_input.setText(selected_path)
-                self.log(f"✓ 문서 선택됨(저장): {selected_path}")
+                self.log(f"문서 선택됨(저장): {selected_path}")
 
         repo_path = self.repo_input.text().strip()
         main_doc = self.main_doc_input.text().strip()
@@ -669,10 +669,10 @@ class SettingsDialog(QDialog):
             )
             
             if not success:
-                self.log("⚠ 설정 저장 실패")
+                self.log("설정 저장 실패")
                 return
         except Exception as e:
-            self.log(f"⚠ 설정 저장 오류: {e}")
+            self.log(f"설정 저장 오류: {e}")
             return
 
         # 전역 변수 업데이트
@@ -680,7 +680,7 @@ class SettingsDialog(QDialog):
         GITHUB_REPO_PATH = repo_path
         MAIN_DOCUMENT_PATH = main_doc
         
-        self.log(f"✓ GitHub 설정 저장됨 (암호화된 설정에 저장됨)")
+        self.log(f"GitHub 설정 저장됨 (암호화된 설정에 저장됨)")
         self.log(f"  저장소: {repo_path}")
         self.log(f"  브랜치: {selected_branch or self.github_repo_config.branch}")
         self.log(f"  메인 문서: {main_doc}")
@@ -717,10 +717,10 @@ class SettingsDialog(QDialog):
             )
             
             if not success:
-                self.log("⚠ 환경 변수 저장 실패")
+                self.log("환경 변수 저장 실패")
                 return
                 
-            self.log("✓ 환경 변수 적용 및 저장됨 (암호화된 설정에만 저장됨)")
+            self.log("환경 변수 적용 및 저장됨 (암호화된 설정에만 저장됨)")
             self.log(f"  저장 위치 (암호화 파일): {self.config_file.parent / 'encrypted_config.enc'}")
             
             # 저장 후 다시 로드하여 검증
@@ -730,18 +730,18 @@ class SettingsDialog(QDialog):
                 self.log(f"[저장 후 검증] 로드된 token 길이: {len(loaded_token)} 자")
                 self.log(f"[저장 후 검증] 로드된 token 일치: {loaded_token == self.env_vars['GITHUB_TOKEN']}")
                 if loaded_token != self.env_vars['GITHUB_TOKEN']:
-                    self.log(f"[저장 후 검증] ⚠ 경고: 로드된 토큰과 입력한 토큰이 다름!")
+                    self.log(f"[저장 후 검증] 경고: 로드된 토큰과 입력한 토큰이 다름!")
             else:
-                self.log("[저장 후 검증] ⚠ 로드된 설정에 github_token이 없습니다!")
+                self.log("[저장 후 검증] 로드된 설정에 github_token이 없습니다!")
         except Exception as e:
             self.log(f"[저장 후 검증] 오류: {str(e)}")
         
         # GitHub Token을 github_repo_config에도 적용
         if self.env_vars["GITHUB_TOKEN"]:
             self.github_repo_config.github_token = self.env_vars["GITHUB_TOKEN"]
-            self.log("✓ GitHubReporter 활성화됨")
+            self.log("GitHubReporter 활성화됨")
         else:
-            self.log("⚠ GitHubReporter 비활성화됨 (토큰 없음)")
+            self.log("GitHubReporter 비활성화됨 (토큰 없음)")
     
     def log(self, message: str):
         """로그 출력 (부모 앱의 로그 뷰어 사용)"""

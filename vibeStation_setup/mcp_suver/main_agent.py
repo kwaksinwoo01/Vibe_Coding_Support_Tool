@@ -35,6 +35,7 @@ Usage:
 """
 
 import json
+import sys
 import time
 import warnings
 from pathlib import Path
@@ -42,6 +43,20 @@ from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 from queue import Queue
 from threading import Lock
+
+# Setup UTF-8 encoding globally to prevent cp949 errors
+if sys.stdout:
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if sys.stderr:
+    try:
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 from .models.core import AgentState, TaskContext
 from .lang_graph_moduel.decision_engine import (
@@ -70,6 +85,7 @@ from .core.routing_engine import (
     MetricsBasedRoutingStrategy,
     RoutingValidator,
 )
+from ..config import get_tier_keywords
 
 
 class CircuitBreakerState:
@@ -277,7 +293,7 @@ class MainAgent:
             enable_decision_engine: Enable intelligent routing decisions
             enable_circuit_breaker: Enable circuit breaker pattern (in-memory)
             enable_metrics: Enable metrics collection
-            policy_config_path: Path to policy configuration JSON (decision_policies.json)
+            policy_config_path: Path to policy configuration directory (decision_policies/)
         """
         self.workspace_root = workspace_root
         self.execution_history: List[Dict[str, Any]] = []
@@ -295,11 +311,11 @@ class MainAgent:
         else:
             self.decision_engine = None
 
-        # Policy engine - uses decision_policies.json
+        # Policy engine - uses split decision_policies directory
         if policy_config_path is None:
-            # Use default config path
+            # Use default config path (directory-based)
             policy_config_path = str(
-                Path(__file__).parent / "config" / "decision_policies.json"
+                Path(__file__).parent.parent / "config" / "decision_policies"
             )
 
         self.policy_engine = PolicyEngine(policy_config_path)
@@ -369,75 +385,7 @@ class MainAgent:
         """
         user_input_lower = user_input.lower()
         
-        tier_keywords = {
-            "A": {
-                "keywords": [
-                    "create", "make", "new", "plan", "wpd", "work plan",
-                    "작업 계획", "생성", "작성", "문서 생성"
-                ],
-                "negative": ["edit", "modify", "change", "execute", "perform", "run", "save", "error", "debug"],
-                "max_score": 10.0,
-            },
-            "B": {
-                "keywords": [
-                    "execute", "perform", "run", "implement", "do", "fulfill",
-                    "실행", "수행", "실행하기", "진행", "완료",
-                    "execute the plan", "perform plan", "run task"
-                ],
-                "negative": ["create", "plan", "edit", "error", "debug"],
-                "max_score": 10.0,
-            },
-            "C": {
-                "keywords": [
-                    "edit", "modify", "change", "update", "alter", "adjust",
-                    "수정", "변경", "편집", "업데이트", "조정",
-                    "edit plan", "modify task", "change task",
-                    "incorrectly created", "wrong document", "should merge",
-                    "잘못 생성", "문서 병합", "경로 수정", "incorrectly generated"
-                ],
-                # **Tier C는 '작업 계획서' 수정에만 해당 (WPD 문서)**
-                "negative": ["create new", "execute", "run", "classification", "location", "path", "directory", "folder"],
-                "max_score": 12.0,
-            },
-            "D": {
-                "keywords": [
-                    "error", "bug", "issue", "problem", "debug", "fix",
-                    "not working", "broken", "failed", "failure",
-                    "오류", "버그", "문제", "해결", "디버그",
-                    "error handling", "debug issue",
-                    "analyze document", "check document", "validate",
-                    "문서 분석", "검증"
-                ],
-                "negative": ["create new", "execute"],
-                "max_score": 10.0,
-            },
-            "E": {
-                "keywords": [
-                    # **핵심: 문서 경로, 위치, 분류, 이름 관련**
-                    "save", "mapping", "relationship", "organize",
-                    "저장", "매핑", "관계", "정리",
-                    "save changes", "update mapping", "document management",
-                    # **새로 추가: 경로/분류 관련 키워드 (높은 우선순위)**
-                    "classification", "location", "path", "directory", "folder",
-                    "wrong path", "wrong location", "incorrect path", "incorrect location",
-                    "should be in", "should move", "incorrect classification",
-                    "rename", "name location", "document path",
-                    "분류", "위치", "경로", "폴더", "디렉토리",
-                    "잘못된 경로", "잘못된 위치", "잘못된 분류",
-                    "이름 변경", "경로 변경", "위치 변경",
-                    # **마이그레이션/구조 관련**
-                    "migration", "migration guide", "reorganize", "relocate",
-                    "folder structure", "directory structure"
-                ],
-                "negative": ["create", "execute", "run", "error", "bug"],
-                "max_score": 15.0,  # **E는 높은 가중치**
-            },
-            "F": {
-                "keywords": [],
-                "negative": [],
-                "max_score": 3.0,
-            },
-        }
+        tier_keywords = get_tier_keywords()
         
         independent_scores: Dict[str, float] = {}
         

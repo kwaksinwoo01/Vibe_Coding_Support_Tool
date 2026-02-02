@@ -26,6 +26,20 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 
+# Setup UTF-8 encoding globally to prevent cp949 errors
+if sys.stdout:
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if sys.stderr:
+    try:
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 from models.core import AgentState, TierCState, TierAState, DocumentCreationContext, AgentLog
@@ -406,7 +420,7 @@ class PlanModificationEngine:
                 
                 if tier_a_result.status == "SUCCESS":
                     created_documents = tier_a_result.payload.get("created_documents", [])
-                    self.log(f"✅ Tier A successfully created {len(created_documents)} documents")
+                    self.log(f"Tier A successfully created {len(created_documents)} documents")
                     
                     # Merge Tier A results back into Tier C state (pass tier_state, not state)
                     tier_a_state_result = TierAState.from_payload(tier_a_result.payload)
@@ -451,12 +465,12 @@ class PlanModificationEngine:
         try:
             # Step 1.4.0: Overwrite with temporary doc
             Path(modified_doc_path).write_text(self.tier_state.temporary_content, encoding='utf-8')
-            self.log(f"✅ Step 1.4.0: Overwritten {modified_doc_path}")
+            self.log(f"Step 1.4.0: Overwritten {modified_doc_path}")
             
             # Step 1.4.1: Read and verify
             updated_content = Path(modified_doc_path).read_text(encoding='utf-8')
             if "Modification Log" in updated_content:
-                self.log(f"✅ Step 1.4.1: Verified changes in {modified_doc_path}")
+                self.log(f"Step 1.4.1: Verified changes in {modified_doc_path}")
                 self.tier_state.affected_sections.append("document_content")
                 return True
             else:
@@ -504,11 +518,11 @@ class PlanModificationEngine:
                 # Step 1.5.1: Remove from list to prevent duplicate creation
                 for doc_to_add in self.tier_state.creation_context.documents_to_create[:]:
                     self.tier_state.creation_context.documents_to_create.remove(doc_to_add)
-                    self.log(f"✅ Step 1.5.1: Removed {doc_to_add} from add_doc list")
+                    self.log(f"Step 1.5.1: Removed {doc_to_add} from add_doc list")
                 
                 # Step 1.5.2: Verify creation
                 if created_docs:
-                    self.log(f"✅ Step 1.5.2: Document creation verified - created {len(created_docs)} documents")
+                    self.log(f"Step 1.5.2: Document creation verified - created {len(created_docs)} documents")
                     for doc in created_docs:
                         self.log(f"  - Created: {doc}")
                     return True
@@ -546,9 +560,9 @@ class PlanModificationEngine:
                 
                 # Remove from list to prevent duplicate deletion
                 self.tier_state.documents_to_remove.remove(doc_to_remove)
-                self.log(f"✅ Step 1.6.1: Verified deletion of {doc_to_remove}")
+                self.log(f"Step 1.6.1: Verified deletion of {doc_to_remove}")
             
-            self.log("✅ Step 1.6: All document deletions completed")
+            self.log("Step 1.6: All document deletions completed")
             return True
         
         except Exception as e:
@@ -559,7 +573,7 @@ class PlanModificationEngine:
         """
         Workflow 1: User-Specified Document Modification (Steps 1.0-1.7)
         """
-        self.log("🔹 Executing Workflow 1: User-Specified Document")
+        self.log("Executing Workflow 1: User-Specified Document")
         
         # Step 1.1: Extract improved_content
         improved_content = self.extract_improved_content(user_input)
@@ -573,7 +587,7 @@ class PlanModificationEngine:
                 error_msg="Failed to create temporary document",
                 logic_summary="Could not read or process modified document"
             )
-        self.log(f"✅ Step 1.2: Created temporary_doc ({len(self.tier_state.temporary_content)} chars)")
+        self.log(f"Step 1.2: Created temporary_doc ({len(self.tier_state.temporary_content)} chars)")
         
         # Step 1.3: Properties added during create_temporary_doc
         self.log(f"Step 1.3: Properties - add: {len(self.tier_state.creation_context.documents_to_create)}, remove: {len(self.tier_state.documents_to_remove)}, update: {len(self.tier_state.modified_documents)}")
@@ -619,7 +633,7 @@ class PlanModificationEngine:
         """
         Workflow 2: Auto-Detect Document Modification (Steps 2.0-2.7)
         """
-        self.log("🔹 Executing Workflow 2: Auto-Detect Document")
+        self.log("Executing Workflow 2: Auto-Detect Document")
         
         # Step 2.0: Find Recent_work_doc and Estimated_related_doc
         improved_content = self.extract_improved_content(user_input)
@@ -640,7 +654,7 @@ class PlanModificationEngine:
                 logic_summary="No recent or related documents found"
             )
         
-        self.log(f"✅ Step 2.0: Selected {modified_doc_path} as Modified_doc")
+        self.log(f"Step 2.0: Selected {modified_doc_path} as Modified_doc")
         
         # Steps 2.1-2.7: Execute same as Workflow 1
         return self.execute_workflow_1(user_input, modified_doc_path)
@@ -651,7 +665,7 @@ class PlanModificationEngine:
         
         Handles automatic triggers from Tier E error sessions
         """
-        self.log("🔹 Executing Workflow 3: Automatic Trigger")
+        self.log("Executing Workflow 3: Automatic Trigger")
         
         # Step 3.0: Extract auto trigger data
         auto_modified_doc = auto_trigger_data.get("target_doc", "")
@@ -704,7 +718,7 @@ class PlanModificationEngine:
         # Step 3.2.1: Overwrite
         try:
             Path(auto_modified_doc).write_text(auto_temp_content, encoding='utf-8')
-            self.log(f"✅ Step 3.2.1: Overwritten {auto_modified_doc}")
+            self.log(f"Step 3.2.1: Overwritten {auto_modified_doc}")
         except Exception as e:
             self.log(f"ERROR Step 3.2.1: {e}")
             return AgentState.create_failure(
@@ -717,7 +731,7 @@ class PlanModificationEngine:
         try:
             updated_content = Path(auto_modified_doc).read_text(encoding='utf-8')
             if "Auto-Modification Log" in updated_content:
-                self.log("✅ Step 3.2.2: Verified auto changes")
+                self.log("Step 3.2.2: Verified auto changes")
             else:
                 self.log("️ Step 3.2.3: Retrying...")
                 # Would retry here in full implementation

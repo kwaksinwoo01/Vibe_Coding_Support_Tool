@@ -350,7 +350,7 @@ class ImprovedClassificationEngine:
         )
         
         # 콘솔 출력
-        print(f"✓ [FEEDBACK] Saved to SQLite DB")
+        print(f"[FEEDBACK] Saved to SQLite DB")
         print(f"  Input: {user_input[:80]}...")
         print(f"  Classification: {classified_tier} → {actual_tier}")
         if correction_action:

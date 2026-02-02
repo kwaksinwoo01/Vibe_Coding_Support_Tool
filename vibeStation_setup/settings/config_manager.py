@@ -168,7 +168,7 @@ def load_encrypted_config(config_dir: Optional[Path] = None) -> Dict[str, Any]:
         >>> token = config.get("github_token")
     """
     if not ENCRYPTION_AVAILABLE:
-        print("암호화 라이브러리를 사용할 수 없습니다.")
+        print("⚠ 암호화 라이브러리를 사용할 수 없습니다.")
         return {}
     
     try:
@@ -190,13 +190,13 @@ def setup_encryption(config_dir: Optional[Path] = None) -> bool:
         초기화 성공 여부
     """
     if not ENCRYPTION_AVAILABLE:
-        print("⚠ cryptography 라이브러리가 필요합니다.")
+        print("cryptography 라이브러리가 필요합니다.")
         print("  설치: pip install cryptography")
         return False
     
     try:
         manager = get_encryption_manager(config_dir)
-        print("✓ 암호화 설정이 초기화되었습니다.")
+        print("암호화 설정이 초기화되었습니다.")
         print(f"  설정 파일: {manager.encrypted_config_file}")
         print(f"  마스터 키: {manager.key_file}")
         return True
