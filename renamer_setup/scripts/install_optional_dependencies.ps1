@@ -67,7 +67,6 @@ function Install-WingetPackage {
         return $true
     }
 
-    # 이미 설치된 경우 winget이 별도 종료 코드를 줄 수 있으므로 목록을 다시 확인합니다.
     & winget.exe list --id $PackageId --exact | Out-Null
     if ($LASTEXITCODE -eq 0) {
         Write-InstallLog "$Description 은(는) 이미 설치되어 있습니다."
@@ -100,6 +99,32 @@ function Download-TessData {
     }
 }
 
+function Sync-TesseractRuntime {
+    $sourceCandidates = @(
+        (Join-Path $env:ProgramFiles 'Tesseract-OCR'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Tesseract-OCR')
+    )
+    $source = $sourceCandidates | Where-Object {
+        $_ -and (Test-Path -LiteralPath (Join-Path $_ 'tesseract.exe'))
+    } | Select-Object -First 1
+
+    if (-not $source) {
+        Write-InstallLog 'tesseract_runtime_copy_skipped: 설치 경로를 찾지 못했습니다.'
+        return
+    }
+
+    $destination = Join-Path $ToolsDir 'tesseract'
+    New-Item -ItemType Directory -Force -Path $destination | Out-Null
+    Copy-Item -LiteralPath (Join-Path $source '*') -Destination $destination -Recurse -Force
+
+    $destinationTessData = Join-Path $destination 'tessdata'
+    New-Item -ItemType Directory -Force -Path $destinationTessData | Out-Null
+    Get-ChildItem -LiteralPath $TessDataDir -Filter '*.traineddata' -ErrorAction SilentlyContinue |
+        Copy-Item -Destination $destinationTessData -Force
+
+    Write-InstallLog "tesseract_runtime_copied: $destination"
+}
+
 Write-InstallLog "dependency bootstrap started. root=$InstallRoot"
 
 $pdftotextBundled = @(
@@ -127,6 +152,7 @@ else {
 
 Download-TessData -Language 'kor'
 Download-TessData -Language 'eng'
+Sync-TesseractRuntime
 
 $excelPaths = @(
     (Join-Path $env:ProgramFiles 'Microsoft Office\root\Office16\EXCEL.EXE'),
