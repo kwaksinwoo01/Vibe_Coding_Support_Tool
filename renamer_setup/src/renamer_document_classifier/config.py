@@ -61,6 +61,12 @@ def tools_directory() -> Path:
     return installation_root() / "tools"
 
 
+def configure_runtime_environment() -> None:
+    tessdata = tools_directory() / "tessdata"
+    if tessdata.is_dir():
+        os.environ["TESSDATA_PREFIX"] = str(tessdata)
+
+
 def _decode_config(raw: bytes) -> str:
     if raw.startswith(b"\xef\xbb\xbf"):
         return raw.decode("utf-8-sig")
@@ -153,3 +159,6 @@ def resolve_person_name(file_name: str, config: UserConfig | None = None) -> str
         if name.casefold() in folded:
             return name
     return active.default_name
+
+
+configure_runtime_environment()
