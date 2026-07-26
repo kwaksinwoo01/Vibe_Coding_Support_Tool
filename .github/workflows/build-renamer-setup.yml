@@ -1,4 +1,4 @@
-name: Build ReNamer Setup
+name: Validate ReNamer Setup Source
 
 on:
   workflow_dispatch:
@@ -15,9 +15,9 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  validate:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -30,11 +30,12 @@ jobs:
           cache: pip
           cache-dependency-path: renamer_setup/pyproject.toml
 
-      - name: Install NSIS
+      - name: Verify UTF-8 BOM sources
         shell: powershell
-        run: choco install nsis --yes --no-progress
+        working-directory: renamer_setup
+        run: ./scripts/verify_text_encoding.ps1
 
-      - name: Install Python build dependencies
+      - name: Install Python test dependencies
         shell: powershell
         working-directory: renamer_setup
         run: |
@@ -45,42 +46,3 @@ jobs:
         shell: powershell
         working-directory: renamer_setup
         run: python -m pytest -q
-
-      - name: Build classifier runtime
-        shell: powershell
-        working-directory: renamer_setup
-        run: python -m PyInstaller --noconfirm classifier.spec
-
-      - name: Compile NSIS installer
-        shell: powershell
-        working-directory: renamer_setup
-        run: |
-          $makensis = @(
-            "${env:ProgramFiles(x86)}\NSIS\makensis.exe",
-            "$env:ProgramFiles\NSIS\makensis.exe"
-          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $makensis) { throw "makensis.exe not found" }
-          Push-Location installer
-          try {
-            & $makensis ReNamer_Setup.nsi
-            if ($LASTEXITCODE -ne 0) { throw "NSIS compilation failed" }
-          }
-          finally {
-            Pop-Location
-          }
-
-      - name: Upload installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: ReNamer_Setup
-          path: renamer_setup/dist/ReNamer_Setup.exe
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload PascalScript source
-        uses: actions/upload-artifact@v4
-        with:
-          name: ReNamer_PascalScript_7_2
-          path: renamer_setup/renamer/renamer_document_classifier_7_2.txt
-          if-no-files-found: error
-          retention-days: 30
