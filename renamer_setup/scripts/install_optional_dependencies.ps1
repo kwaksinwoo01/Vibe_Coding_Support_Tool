@@ -115,7 +115,7 @@ function Sync-TesseractRuntime {
 
     $destination = Join-Path $ToolsDir 'tesseract'
     New-Item -ItemType Directory -Force -Path $destination | Out-Null
-    Copy-Item -LiteralPath (Join-Path $source '*') -Destination $destination -Recurse -Force
+    Copy-Item -Path (Join-Path $source '*') -Destination $destination -Recurse -Force
 
     $destinationTessData = Join-Path $destination 'tessdata'
     New-Item -ItemType Directory -Force -Path $destinationTessData | Out-Null
