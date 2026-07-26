@@ -1,0 +1,56 @@
+name: Build ReNamer Setup
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "renamer_setup/**"
+      - ".github/workflows/build-renamer-setup.yml"
+  pull_request:
+    paths:
+      - "renamer_setup/**"
+      - ".github/workflows/build-renamer-setup.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: renamer_setup/pyproject.toml
+
+      - name: Install NSIS
+        shell: powershell
+        run: choco install nsis --yes --no-progress
+
+      - name: Build and test installer
+        shell: powershell
+        working-directory: renamer_setup
+        run: ./scripts/build.ps1
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReNamer_Setup
+          path: renamer_setup/dist/ReNamer_Setup.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload PascalScript source
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReNamer_PascalScript_7_2
+          path: renamer_setup/renamer/renamer_document_classifier_7_2.txt
+          if-no-files-found: error
+          retention-days: 30
