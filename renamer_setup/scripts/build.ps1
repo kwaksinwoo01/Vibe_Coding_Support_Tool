@@ -21,7 +21,14 @@ function Find-Python {
 
 function Invoke-Python {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
-    & $script:PythonCommand[0] $script:PythonCommand[1..($script:PythonCommand.Count - 1)] @Arguments
+
+    $executable = $script:PythonCommand[0]
+    $prefixArguments = @()
+    if ($script:PythonCommand.Count -gt 1) {
+        $prefixArguments = $script:PythonCommand[1..($script:PythonCommand.Count - 1)]
+    }
+
+    & $executable @prefixArguments @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Python command failed: $($Arguments -join ' ')"
     }
