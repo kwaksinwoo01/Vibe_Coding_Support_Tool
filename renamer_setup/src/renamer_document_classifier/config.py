@@ -136,9 +136,9 @@ def save_user_config(default_name: str, known_names: list[str] | tuple[str, ...]
     parser.write(buffer)
     config_path().write_text(buffer.getvalue(), encoding="utf-8-sig")
 
-    # ReNamer PascalScript가 별도 INI 파서 없이 안정적으로 읽는 UTF-8 BOM 목록입니다.
+    # 첫 줄은 기본 이름, 이후 줄은 추가 인식 이름입니다.
     names_path().write_text(
-        "\n".join((default_name, *normalized)) + "\n",
+        "\n".join((default_name, *normalized[1:])) + "\n",
         encoding="utf-8-sig",
     )
 
