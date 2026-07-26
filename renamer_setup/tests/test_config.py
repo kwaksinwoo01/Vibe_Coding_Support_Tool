@@ -23,7 +23,6 @@ def test_installer_configuration_is_saved_for_python_and_pascal(
     assert saved.known_names == ("홍길동", "김민규", "이슬기")
     assert names_path().read_text(encoding="utf-8-sig").splitlines() == [
         "홍길동",
-        "홍길동",
         "김민규",
         "이슬기",
     ]
