@@ -1,10 +1,24 @@
-param(
+﻿param(
     [switch]$SkipTests
 )
 
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
+
+$EncodingVerifier = Join-Path $PSScriptRoot 'verify_text_encoding.ps1'
+if (-not (Test-Path -LiteralPath $EncodingVerifier)) {
+    throw "Encoding verifier not found: $EncodingVerifier"
+}
+
+& powershell.exe `
+    -NoLogo `
+    -NoProfile `
+    -ExecutionPolicy Bypass `
+    -File $EncodingVerifier
+if ($LASTEXITCODE -ne 0) {
+    throw 'UTF-8 BOM validation failed.'
+}
 
 function Find-Python {
     foreach ($candidate in @('py.exe', 'python.exe', 'python')) {
@@ -77,7 +91,12 @@ if (-not $Makensis) {
 
 Push-Location (Join-Path $ProjectRoot 'installer')
 try {
-    & $Makensis 'ReNamer_Setup.nsi'
+    & $Makensis `
+        '/INPUTCHARSET' `
+        'UTF8' `
+        '/OUTPUTCHARSET' `
+        'UTF8SIG' `
+        'ReNamer_Setup.nsi'
     if ($LASTEXITCODE -ne 0) {
         throw 'NSIS build failed.'
     }
