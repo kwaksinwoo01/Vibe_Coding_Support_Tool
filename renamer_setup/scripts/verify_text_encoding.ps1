@@ -1,0 +1,58 @@
+﻿$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+
+$RequiredBomFiles = @(
+    'installer\ReNamer_Setup.nsi',
+    'scripts\build.ps1',
+    'scripts\install_optional_dependencies.ps1',
+    'scripts\verify_text_encoding.ps1',
+    'renamer\renamer_document_classifier_7_2.txt'
+)
+
+$Failed = $false
+
+foreach ($relativePath in $RequiredBomFiles) {
+    $path = Join-Path $ProjectRoot $relativePath
+
+    if (-not (Test-Path -LiteralPath $path)) {
+        Write-Error "Required source file not found: $relativePath"
+        $Failed = $true
+        continue
+    }
+
+    $bytes = [System.IO.File]::ReadAllBytes($path)
+    $hasUtf8Bom =
+        $bytes.Length -ge 3 -and
+        $bytes[0] -eq 0xEF -and
+        $bytes[1] -eq 0xBB -and
+        $bytes[2] -eq 0xBF
+
+    if (-not $hasUtf8Bom) {
+        Write-Error "UTF-8 BOM is missing: $relativePath"
+        $Failed = $true
+        continue
+    }
+
+    try {
+        $strictUtf8 = New-Object System.Text.UTF8Encoding($true, $true)
+        [void]$strictUtf8.GetString($bytes)
+        Write-Host "UTF-8 BOM OK: $relativePath" -ForegroundColor Green
+    }
+    catch {
+        Write-Error "Invalid UTF-8 content: $relativePath - $($_.Exception.Message)"
+        $Failed = $true
+    }
+}
+
+if ($Failed) {
+    Write-Host ''
+    Write-Host 'Encoding validation failed.' -ForegroundColor Red
+    Write-Host 'Save the reported files as UTF-8 with BOM and run the build again.'
+    exit 1
+}
+
+Write-Host ''
+Write-Host 'All required installer sources use UTF-8 BOM.' -ForegroundColor Green
+exit 0
