@@ -21,7 +21,7 @@ hiddenimports = sorted(
 )
 
 analysis = Analysis(
-    ["src/renamer_document_classifier/cli.py"],
+    ["launcher.py"],
     pathex=["src"],
     binaries=calamine_binaries,
     datas=calamine_data,
