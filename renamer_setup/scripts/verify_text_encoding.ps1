@@ -12,12 +12,13 @@ $RequiredBomFiles = @(
 )
 
 $Failed = $false
+$StrictUtf8 = [System.Text.UTF8Encoding]::new($true, $true)
 
 foreach ($relativePath in $RequiredBomFiles) {
     $path = Join-Path $ProjectRoot $relativePath
 
     if (-not (Test-Path -LiteralPath $path)) {
-        Write-Error "Required source file not found: $relativePath"
+        Write-Host "Required source file not found: $relativePath" -ForegroundColor Red
         $Failed = $true
         continue
     }
@@ -30,18 +31,17 @@ foreach ($relativePath in $RequiredBomFiles) {
         $bytes[2] -eq 0xBF
 
     if (-not $hasUtf8Bom) {
-        Write-Error "UTF-8 BOM is missing: $relativePath"
+        Write-Host "UTF-8 BOM is missing: $relativePath" -ForegroundColor Red
         $Failed = $true
         continue
     }
 
     try {
-        $strictUtf8 = New-Object System.Text.UTF8Encoding($true, $true)
-        [void]$strictUtf8.GetString($bytes)
+        [void]$StrictUtf8.GetString($bytes)
         Write-Host "UTF-8 BOM OK: $relativePath" -ForegroundColor Green
     }
     catch {
-        Write-Error "Invalid UTF-8 content: $relativePath - $($_.Exception.Message)"
+        Write-Host "Invalid UTF-8 content: $relativePath - $($_.Exception.Message)" -ForegroundColor Red
         $Failed = $true
     }
 }
