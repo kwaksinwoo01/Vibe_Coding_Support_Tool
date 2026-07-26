@@ -1,0 +1,1222 @@
+﻿// 자동이름 변경 시스템 7.1
+//
+// 핵심 변경:
+// 1) PDF 및 Excel 본문을 동일한 분류기로 분석
+// 2) Excel 지원: .xls, .xlsx, .xlsm, .xlsb, .ods
+// 3) Excel 셀 추출 실패/불충분 시 LibreOffice PDF 변환 후 재분석
+// 4) PDF/Excel 텍스트로 판정하지 못하면 pdftoppm + Tesseract OCR 폴백
+// 5) 팝업 디버그 제거, classification.log 누적 기록
+// 6) PDF/Excel이라는 이유만으로 거래명세서를 적용하지 않음
+// 7) 판정 불가 문서는 원래 파일명 유지
+
+
+const
+  PYTHON_COMMAND = 'py.exe';
+  EXTRACTOR_SCRIPT = 'C:\Users\Public\Documents\ReNamerDocumentClassifier\document_text_extract.py';
+  TOOL_ROOT = 'C:\Users\Public\Documents\ReNamerDocumentClassifier\';
+  TEMP_WORK_DIR = 'C:\Users\Public\Documents\ReNamerDocumentClassifier\temp\';
+  LOG_PATH = 'C:\Users\Public\Documents\ReNamerDocumentClassifier\classification.log';
+  LOG_ENABLED = True;
+  MAX_LOG_BYTES = 5242880;
+  MIN_SUPPORT_SCORE = 50;
+
+
+var
+  DateTime: TDateTime;
+  TakenDate, ExistingDate, ExistingDateToken: WideString;
+  OriginalBaseName, TempOriginalBaseName: WideString;
+  FileExtension, DocumentType, PersonName: WideString;
+  LowerCurrentName, CurrentName: WideString;
+  NameList: array[0..5] of WideString;
+  i: Integer;
+  ExtractorMeta, DetectedBy: WideString;
+  ExtractorExitCode: Cardinal;
+  ExtractedTextLength: Integer;
+  QuotationScore, TransactionScore: Integer;
+  QuotationTitlePos, TransactionTitlePos: Integer;
+  LogRunInitialized: Boolean;
+
+
+function IsDigitChar(const C: WideChar): Boolean;
+begin
+  Result := False;
+  if C < '0' then Exit;
+  if C > '9' then Exit;
+  Result := True;
+end;
+
+
+function IsDateSeparator(const C: WideChar): Boolean;
+begin
+  Result := (C = '_') or (C = ' ') or (C = '-') or (C = '.');
+end;
+
+
+function IsDateSeparatorAt(const S: WideString; Position: Integer): Boolean;
+begin
+  Result := False;
+  if Position < 1 then Exit;
+  if Position > Length(S) then Exit;
+  Result := IsDateSeparator(S[Position]);
+end;
+
+
+function IsValidMonthDayAt(
+  const S: WideString;
+  MonthStart: Integer;
+  DayStart: Integer
+): Boolean;
+var
+  MonthTens, MonthOnes, DayTens, DayOnes: WideChar;
+begin
+  Result := False;
+
+
+  if MonthStart < 1 then Exit;
+  if DayStart < 1 then Exit;
+  if MonthStart + 1 > Length(S) then Exit;
+  if DayStart + 1 > Length(S) then Exit;
+
+
+  MonthTens := S[MonthStart];
+  MonthOnes := S[MonthStart + 1];
+  DayTens := S[DayStart];
+  DayOnes := S[DayStart + 1];
+
+
+  if not IsDigitChar(MonthTens) then Exit;
+  if not IsDigitChar(MonthOnes) then Exit;
+  if not IsDigitChar(DayTens) then Exit;
+  if not IsDigitChar(DayOnes) then Exit;
+
+
+  if MonthTens = '0' then
+  begin
+    if MonthOnes < '1' then Exit;
+    if MonthOnes > '9' then Exit;
+  end
+  else if MonthTens = '1' then
+  begin
+    if MonthOnes < '0' then Exit;
+    if MonthOnes > '2' then Exit;
+  end
+  else
+    Exit;
+
+
+  if DayTens = '0' then
+  begin
+    if DayOnes < '1' then Exit;
+    if DayOnes > '9' then Exit;
+  end
+  else if (DayTens = '1') or (DayTens = '2') then
+  begin
+    if DayOnes < '0' then Exit;
+    if DayOnes > '9' then Exit;
+  end
+  else if DayTens = '3' then
+  begin
+    if DayOnes < '0' then Exit;
+    if DayOnes > '1' then Exit;
+  end
+  else
+    Exit;
+
+
+  Result := True;
+end;
+
+
+function IsValidYYMMDDAt(const S: WideString; StartPos: Integer): Boolean;
+var
+  j: Integer;
+begin
+  Result := False;
+
+
+  if StartPos < 1 then Exit;
+  if StartPos + 5 > Length(S) then Exit;
+
+
+  for j := StartPos to StartPos + 5 do
+  begin
+    if not IsDigitChar(S[j]) then Exit;
+  end;
+
+
+  if StartPos > 1 then
+  begin
+    if not IsDateSeparatorAt(S, StartPos - 1) then Exit;
+  end;
+
+
+  if StartPos + 5 < Length(S) then
+  begin
+    if not IsDateSeparatorAt(S, StartPos + 6) then Exit;
+  end;
+
+
+  if not IsValidMonthDayAt(S, StartPos + 2, StartPos + 4) then Exit;
+  Result := True;
+end;
+
+
+function IsValidYYYYSeparatedDateAt(
+  const S: WideString;
+  StartPos: Integer;
+  var CompactDate: WideString;
+  var SourceToken: WideString
+): Boolean;
+var
+  j: Integer;
+  SeparatorChar: WideChar;
+begin
+  Result := False;
+  CompactDate := '';
+  SourceToken := '';
+
+
+  if StartPos < 1 then Exit;
+  if StartPos + 9 > Length(S) then Exit;
+
+
+  for j := StartPos to StartPos + 3 do
+  begin
+    if not IsDigitChar(S[j]) then Exit;
+  end;
+
+
+  if not IsDigitChar(S[StartPos + 5]) then Exit;
+  if not IsDigitChar(S[StartPos + 6]) then Exit;
+  if not IsDigitChar(S[StartPos + 8]) then Exit;
+  if not IsDigitChar(S[StartPos + 9]) then Exit;
+
+
+  SeparatorChar := S[StartPos + 4];
+  if SeparatorChar <> '-' then
+  begin
+    if SeparatorChar <> '.' then
+    begin
+      if SeparatorChar <> '_' then Exit;
+    end;
+  end;
+
+
+  if S[StartPos + 7] <> SeparatorChar then Exit;
+
+
+  if StartPos > 1 then
+  begin
+    if not IsDateSeparatorAt(S, StartPos - 1) then Exit;
+  end;
+
+
+  if StartPos + 9 < Length(S) then
+  begin
+    if not IsDateSeparatorAt(S, StartPos + 10) then Exit;
+  end;
+
+
+  if not IsValidMonthDayAt(S, StartPos + 5, StartPos + 8) then Exit;
+
+
+  SourceToken := WideCopy(S, StartPos, 10);
+  CompactDate :=
+    WideCopy(S, StartPos + 2, 2) +
+    WideCopy(S, StartPos + 5, 2) +
+    WideCopy(S, StartPos + 8, 2);
+
+
+  Result := True;
+end;
+
+
+function ExtractExistingDateToYYMMDD(
+  const S: WideString;
+  var SourceToken: WideString
+): WideString;
+var
+  Position: Integer;
+  CompactDate: WideString;
+begin
+  Result := '';
+  SourceToken := '';
+
+
+  if Length(S) >= 10 then
+  begin
+    for Position := 1 to Length(S) - 9 do
+    begin
+      CompactDate := '';
+      if IsValidYYYYSeparatedDateAt(
+        S,
+        Position,
+        CompactDate,
+        SourceToken
+      ) then
+      begin
+        Result := CompactDate;
+        Exit;
+      end;
+    end;
+  end;
+
+
+  if Length(S) >= 6 then
+  begin
+    for Position := 1 to Length(S) - 5 do
+    begin
+      if IsValidYYMMDDAt(S, Position) then
+      begin
+        SourceToken := WideCopy(S, Position, 6);
+        Result := SourceToken;
+        Exit;
+      end;
+    end;
+  end;
+end;
+
+
+function IsAsciiText(const S: WideString): Boolean;
+var
+  Position: Integer;
+begin
+  Result := True;
+  for Position := 1 to Length(S) do
+  begin
+    if S[Position] > '~' then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+end;
+
+
+procedure EnsureLogFile;
+begin
+  if not LOG_ENABLED then Exit;
+
+
+  WideForceDirectories(TOOL_ROOT);
+
+
+  if WideFileExists(LOG_PATH) then
+  begin
+    if WideFileSize(LOG_PATH) > MAX_LOG_BYTES then
+    begin
+      FileWriteContent(
+        LOG_PATH,
+        Chr($EF) + Chr($BB) + Chr($BF)
+      );
+      FileAppendContent(
+        LOG_PATH,
+        UTF8Encode('[LOG ROTATED]' + #13#10)
+      );
+    end;
+  end
+  else
+  begin
+    FileWriteContent(
+      LOG_PATH,
+      Chr($EF) + Chr($BB) + Chr($BF)
+    );
+  end;
+end;
+
+
+procedure AppendLog(const Text: WideString);
+begin
+  if not LOG_ENABLED then Exit;
+  EnsureLogFile;
+  FileAppendContent(LOG_PATH, UTF8Encode(Text));
+end;
+
+
+procedure StartLogRun;
+begin
+  if not LOG_ENABLED then Exit;
+  if LogRunInitialized then Exit;
+
+
+  LogRunInitialized := True;
+
+
+  AppendLog(
+    #13#10 +
+    '============================================================' + #13#10 +
+    'preview_started=' + FormatDateTime('yyyy-mm-dd hh:nn:ss', Now) + #13#10 +
+    'total_files=' + IntToStr(GetTotalNumberOfFiles) + #13#10 +
+    '============================================================' + #13#10
+  );
+end;
+
+
+function PrepareConsoleDocumentPath(
+  const SourcePath: WideString;
+  var TempCopyCreated: Boolean
+): WideString;
+var
+  ShortPath, TempPath, Extension: WideString;
+begin
+  Result := '';
+  TempCopyCreated := False;
+
+
+  ShortPath := WideExtractShortPathName(SourcePath);
+  if Length(ShortPath) > 0 then
+  begin
+    if IsAsciiText(ShortPath) then
+    begin
+      Result := ShortPath;
+      Exit;
+    end;
+  end;
+
+
+  if not WideForceDirectories(TEMP_WORK_DIR) then Exit;
+
+
+  Extension := WideLowerCase(WideExtractFileExt(SourcePath));
+  TempPath :=
+    TEMP_WORK_DIR +
+    'input_' + IntToStr(GetCurrentFileIndex) + Extension;
+
+
+  if WideCopyFile(SourcePath, TempPath, False) then
+  begin
+    Result := TempPath;
+    TempCopyCreated := True;
+  end;
+end;
+
+
+function ExtractDocumentText(
+  const SourcePath: WideString;
+  var ExtractorMeta: WideString;
+  var ExtractorExitCode: Cardinal
+): WideString;
+var
+  ConsoleInputPath, MetaPath: WideString;
+  CommandLine, ConsoleOutput: String;
+  TempCopyCreated: Boolean;
+begin
+  Result := '';
+  ExtractorMeta := '';
+  ExtractorExitCode := 127;
+  ConsoleOutput := '';
+  TempCopyCreated := False;
+
+
+  if not WideFileExists(EXTRACTOR_SCRIPT) then
+  begin
+    ExtractorMeta := 'status=extractor_missing' + #13#10 +
+      'extractor=' + EXTRACTOR_SCRIPT + #13#10;
+    Exit;
+  end;
+
+
+  ConsoleInputPath :=
+    PrepareConsoleDocumentPath(SourcePath, TempCopyCreated);
+
+
+  if Length(ConsoleInputPath) = 0 then
+  begin
+    ExtractorMeta := 'status=input_path_prepare_failed' + #13#10;
+    Exit;
+  end;
+
+
+  if not WideForceDirectories(TEMP_WORK_DIR) then
+  begin
+    ExtractorMeta := 'status=temp_directory_failed' + #13#10;
+    Exit;
+  end;
+
+
+  MetaPath :=
+    TEMP_WORK_DIR +
+    'meta_' + IntToStr(GetCurrentFileIndex) + '.txt';
+
+
+  if WideFileExists(MetaPath) then
+    WideDeleteFile(MetaPath);
+
+
+  CommandLine := UTF8Encode(
+    PYTHON_COMMAND +
+    ' "' + EXTRACTOR_SCRIPT + '"' +
+    ' --input "' + ConsoleInputPath + '"' +
+    ' --meta "' + MetaPath + '"' +
+    ' --work-dir "' + TEMP_WORK_DIR + '"' +
+    ' --max-pages 2' +
+    ' --max-sheets 3' +
+    ' --max-rows 200' +
+    ' --max-columns 50' +
+    ' --max-characters 50000' +
+    ' --ocr-dpi 220' +
+    ' --timeout 120'
+  );
+
+
+  ExtractorExitCode := ExecConsoleApp(CommandLine, ConsoleOutput);
+
+
+  if Length(ConsoleOutput) > 0 then
+    Result := UTF8Decode(ConsoleOutput);
+
+
+  if WideFileExists(MetaPath) then
+    ExtractorMeta := FileReadText(MetaPath)
+  else
+    ExtractorMeta := 'status=metadata_missing' + #13#10;
+
+
+  if TempCopyCreated then
+    WideDeleteFile(ConsoleInputPath);
+
+
+  if WideFileExists(MetaPath) then
+    WideDeleteFile(MetaPath);
+end;
+
+
+function NormalizeDocumentText(const S: WideString): WideString;
+begin
+  Result := WideLowerCase(S);
+  Result := WideReplaceStr(Result, ' ', '');
+  Result := WideReplaceStr(Result, #9, '');
+  Result := WideReplaceStr(Result, #10, '');
+  Result := WideReplaceStr(Result, #11, '');
+  Result := WideReplaceStr(Result, #12, '');
+  Result := WideReplaceStr(Result, #13, '');
+end;
+
+
+function ContainsKeywordWithGaps(
+  const Text: WideString;
+  const Keyword: WideString;
+  MaxGap: Integer
+): Boolean;
+var
+  StartPos, TextPos, KeywordPos, GapCount: Integer;
+  MatchFailed: Boolean;
+begin
+  Result := False;
+
+
+  if Length(Text) = 0 then Exit;
+  if Length(Keyword) = 0 then Exit;
+
+
+  for StartPos := 1 to Length(Text) do
+  begin
+    if Text[StartPos] = Keyword[1] then
+    begin
+      TextPos := StartPos + 1;
+      KeywordPos := 2;
+      MatchFailed := False;
+
+
+      while KeywordPos <= Length(Keyword) do
+      begin
+        GapCount := 0;
+
+
+        while TextPos <= Length(Text) do
+        begin
+          if Text[TextPos] = Keyword[KeywordPos] then Break;
+
+
+          Inc(GapCount);
+          if GapCount > MaxGap then
+          begin
+            MatchFailed := True;
+            Break;
+          end;
+
+
+          Inc(TextPos);
+        end;
+
+
+        if MatchFailed then Break;
+
+
+        if TextPos > Length(Text) then
+        begin
+          MatchFailed := True;
+          Break;
+        end;
+
+
+        Inc(TextPos);
+        Inc(KeywordPos);
+      end;
+
+
+      if not MatchFailed then
+      begin
+        Result := True;
+        Exit;
+      end;
+    end;
+  end;
+end;
+
+
+function SetEarlierPosition(
+  CurrentPosition: Integer;
+  CandidatePosition: Integer
+): Integer;
+begin
+  Result := CurrentPosition;
+  if CandidatePosition <= 0 then Exit;
+
+
+  if Result = 0 then
+    Result := CandidatePosition
+  else if CandidatePosition < Result then
+    Result := CandidatePosition;
+end;
+
+
+function FindFirstQuotationTitle(const Text: WideString): Integer;
+begin
+  Result := 0;
+  Result := SetEarlierPosition(Result, WidePos('견적서', Text));
+  Result := SetEarlierPosition(Result, WidePos('見積書', Text));
+  Result := SetEarlierPosition(Result, WidePos('お見積書', Text));
+  Result := SetEarlierPosition(Result, WidePos('quotation', Text));
+  Result := SetEarlierPosition(Result, WidePos('pricequotation', Text));
+  Result := SetEarlierPosition(Result, WidePos('salesquotation', Text));
+
+
+  if Result = 0 then
+  begin
+    if ContainsKeywordWithGaps(Text, '견적서', 32) then
+      Result := 1;
+  end;
+
+
+  if Result = 0 then
+  begin
+    if ContainsKeywordWithGaps(Text, '見積書', 32) then
+      Result := 1;
+  end;
+end;
+
+
+function FindFirstTransactionTitle(const Text: WideString): Integer;
+begin
+  Result := 0;
+  Result := SetEarlierPosition(Result, WidePos('거래명세서', Text));
+  Result := SetEarlierPosition(Result, WidePos('거래명세표', Text));
+  Result := SetEarlierPosition(Result, WidePos('거래내역서', Text));
+  Result := SetEarlierPosition(Result, WidePos('取引明細書', Text));
+  Result := SetEarlierPosition(Result, WidePos('transactionstatement', Text));
+  Result := SetEarlierPosition(Result, WidePos('statementoftransaction', Text));
+
+
+  if Result = 0 then
+  begin
+    if ContainsKeywordWithGaps(Text, '거래명세서', 32) then
+      Result := 1;
+  end;
+
+
+  if Result = 0 then
+  begin
+    if ContainsKeywordWithGaps(Text, '거래명세표', 32) then
+      Result := 1;
+  end;
+end;
+
+
+function GetQuotationSupportScore(const Text: WideString): Integer;
+begin
+  Result := 0;
+
+
+  if WidePos('견적유효기간', Text) > 0 then
+    Result := Result + 60;
+
+
+  if WidePos('아래와같이견적합니다', Text) > 0 then
+    Result := Result + 60;
+
+
+  if WidePos('견적금액', Text) > 0 then
+    Result := Result + 55;
+
+
+  if WidePos('견적번호', Text) > 0 then
+    Result := Result + 35;
+
+
+  if WidePos('견적일자', Text) > 0 then
+    Result := Result + 30;
+
+
+  if WidePos('유효기간', Text) > 0 then
+    Result := Result + 10;
+
+
+  if WidePos('pricequotation', Text) > 0 then
+    Result := Result + 60;
+
+
+  if WidePos('salesquotation', Text) > 0 then
+    Result := Result + 60;
+
+
+  if WidePos('writtenestimate', Text) > 0 then
+    Result := Result + 55;
+
+
+  if WidePos('costestimate', Text) > 0 then
+    Result := Result + 55;
+end;
+
+
+function GetTransactionSupportScore(const Text: WideString): Integer;
+begin
+  Result := 0;
+
+
+  if WidePos('거래일자', Text) > 0 then
+    Result := Result + 30;
+
+
+  if WidePos('인수자', Text) > 0 then
+    Result := Result + 35;
+
+
+  if WidePos('영수자', Text) > 0 then
+    Result := Result + 30;
+
+
+  if WidePos('전잔액', Text) > 0 then
+    Result := Result + 40;
+
+
+  if WidePos('현잔액', Text) > 0 then
+    Result := Result + 40;
+
+
+  if WidePos('합계잔액', Text) > 0 then
+    Result := Result + 40;
+
+
+  if WidePos('미수금', Text) > 0 then
+    Result := Result + 35;
+
+
+  if WidePos('입금액', Text) > 0 then
+    Result := Result + 25;
+
+
+  if WidePos('납품일자', Text) > 0 then
+    Result := Result + 30;
+
+
+  if WidePos('출하일자', Text) > 0 then
+    Result := Result + 30;
+
+
+  if WidePos('거래처', Text) > 0 then
+    Result := Result + 15;
+
+
+  if WidePos('공급받는자', Text) > 0 then
+    Result := Result + 10;
+
+
+  if WidePos('거래금액', Text) > 0 then
+    Result := Result + 25;
+end;
+
+
+function ClassifyDocumentText(
+  const DocumentText: WideString;
+  var QuotationScore: Integer;
+  var TransactionScore: Integer;
+  var QuotationTitlePos: Integer;
+  var TransactionTitlePos: Integer
+): WideString;
+var
+  NormalizedText, TitleText: WideString;
+begin
+  Result := 'NA';
+  QuotationScore := 0;
+  TransactionScore := 0;
+  QuotationTitlePos := 0;
+  TransactionTitlePos := 0;
+
+
+  NormalizedText := NormalizeDocumentText(DocumentText);
+
+
+  if Length(NormalizedText) > 12000 then
+    NormalizedText := WideCopy(NormalizedText, 1, 12000);
+
+
+  TitleText := NormalizedText;
+  if Length(TitleText) > 2500 then
+    TitleText := WideCopy(TitleText, 1, 2500);
+
+
+  QuotationTitlePos := FindFirstQuotationTitle(TitleText);
+  TransactionTitlePos := FindFirstTransactionTitle(TitleText);
+
+
+  if QuotationTitlePos > 0 then
+  begin
+    if TransactionTitlePos = 0 then
+    begin
+      Result := '00.견적서';
+      Exit;
+    end;
+  end;
+
+
+  if TransactionTitlePos > 0 then
+  begin
+    if QuotationTitlePos = 0 then
+    begin
+      Result := '01.거래명세서';
+      Exit;
+    end;
+  end;
+
+
+  if QuotationTitlePos > 0 then
+  begin
+    if TransactionTitlePos > 0 then
+    begin
+      if QuotationTitlePos < TransactionTitlePos then
+        Result := '00.견적서'
+      else if TransactionTitlePos < QuotationTitlePos then
+        Result := '01.거래명세서';
+
+
+      if Result <> 'NA' then Exit;
+    end;
+  end;
+
+
+  QuotationScore := GetQuotationSupportScore(NormalizedText);
+  TransactionScore := GetTransactionSupportScore(NormalizedText);
+
+
+  if QuotationScore < MIN_SUPPORT_SCORE then
+  begin
+    if TransactionScore < MIN_SUPPORT_SCORE then Exit;
+  end;
+
+
+  if QuotationScore > TransactionScore then
+  begin
+    Result := '00.견적서';
+    Exit;
+  end;
+
+
+  if TransactionScore > QuotationScore then
+  begin
+    Result := '01.거래명세서';
+    Exit;
+  end;
+end;
+
+
+function IsSupportedDocumentExtension(const Extension: WideString): Boolean;
+var
+  LowerExtension: WideString;
+begin
+  LowerExtension := WideLowerCase(Extension);
+  Result :=
+    (LowerExtension = '.pdf') or
+    (LowerExtension = '.xls') or
+    (LowerExtension = '.xlsx') or
+    (LowerExtension = '.xlsm') or
+    (LowerExtension = '.xlsb') or
+    (LowerExtension = '.ods');
+end;
+
+
+function InferDocumentTypeFromFileName(
+  const AFileName: WideString
+): WideString;
+var
+  LowerFileName: WideString;
+begin
+  Result := 'NA';
+  LowerFileName := WideLowerCase(AFileName);
+
+
+  if WidePos('구매기안서', LowerFileName) > 0 then
+  begin
+    Result := '00.견적서';
+    Exit;
+  end;
+
+
+  if WidePos('견적서', LowerFileName) > 0 then
+  begin
+    Result := '00.견적서';
+    Exit;
+  end;
+
+
+  if WidePos('거래명세서', LowerFileName) > 0 then
+  begin
+    Result := '01.거래명세서';
+    Exit;
+  end;
+
+
+  if WidePos('거래명세표', LowerFileName) > 0 then
+  begin
+    Result := '01.거래명세서';
+    Exit;
+  end;
+
+
+  if WidePos('거래내역서', LowerFileName) > 0 then
+  begin
+    Result := '01.거래명세서';
+    Exit;
+  end;
+end;
+
+
+function AnalyzeSupportedDocument(
+  const AFileName: WideString;
+  const AFilePath: WideString;
+  var ExtractorMeta: WideString;
+  var ExtractorExitCode: Cardinal;
+  var ExtractedTextLength: Integer;
+  var QuotationScore: Integer;
+  var TransactionScore: Integer;
+  var QuotationTitlePos: Integer;
+  var TransactionTitlePos: Integer;
+  var DetectedBy: WideString
+): WideString;
+var
+  DocumentText: WideString;
+begin
+  Result := 'NA';
+  ExtractedTextLength := 0;
+  QuotationScore := 0;
+  TransactionScore := 0;
+  QuotationTitlePos := 0;
+  TransactionTitlePos := 0;
+  DetectedBy := 'none';
+
+
+  DocumentText := ExtractDocumentText(
+    AFilePath,
+    ExtractorMeta,
+    ExtractorExitCode
+  );
+
+
+  ExtractedTextLength := Length(DocumentText);
+
+
+  if ExtractedTextLength > 0 then
+  begin
+    Result := ClassifyDocumentText(
+      DocumentText,
+      QuotationScore,
+      TransactionScore,
+      QuotationTitlePos,
+      TransactionTitlePos
+    );
+
+
+    if Result <> 'NA' then
+    begin
+      DetectedBy := 'document_content';
+      Exit;
+    end;
+  end;
+
+
+  Result := InferDocumentTypeFromFileName(AFileName);
+  if Result <> 'NA' then
+    DetectedBy := 'filename_fallback';
+end;
+
+
+procedure LogClassification(
+  const AFilePath: WideString;
+  const Extension: WideString;
+  const ExtractorMeta: WideString;
+  ExtractorExitCode: Cardinal;
+  ExtractedTextLength: Integer;
+  QuotationScore: Integer;
+  TransactionScore: Integer;
+  QuotationTitlePos: Integer;
+  TransactionTitlePos: Integer;
+  const DetectedBy: WideString;
+  const ResultType: WideString
+);
+begin
+  if not LOG_ENABLED then Exit;
+
+
+  AppendLog(
+    '[FILE]' + #13#10 +
+    'time=' + FormatDateTime('yyyy-mm-dd hh:nn:ss', Now) + #13#10 +
+    'index=' + IntToStr(GetCurrentFileIndex) + #13#10 +
+    'path=' + AFilePath + #13#10 +
+    'extension=' + Extension + #13#10 +
+    'extractor_exit_code=' + IntToStr(ExtractorExitCode) + #13#10 +
+    'extracted_text_length=' + IntToStr(ExtractedTextLength) + #13#10 +
+    'quotation_title_position=' + IntToStr(QuotationTitlePos) + #13#10 +
+    'transaction_title_position=' + IntToStr(TransactionTitlePos) + #13#10 +
+    'quotation_score=' + IntToStr(QuotationScore) + #13#10 +
+    'transaction_score=' + IntToStr(TransactionScore) + #13#10 +
+    'detected_by=' + DetectedBy + #13#10 +
+    'result=' + ResultType + #13#10 +
+    '[EXTRACTOR_META]' + #13#10 +
+    ExtractorMeta +
+    '[/EXTRACTOR_META]' + #13#10 +
+    '[/FILE]' + #13#10 + #13#10
+  );
+end;
+
+
+function IsImageExtension(const Extension: WideString): Boolean;
+var
+  LowerExtension: WideString;
+begin
+  LowerExtension := WideLowerCase(Extension);
+  Result :=
+    (LowerExtension = '.jpg') or
+    (LowerExtension = '.jpeg') or
+    (LowerExtension = '.png') or
+    (LowerExtension = '.gif') or
+    (LowerExtension = '.bmp') or
+    (LowerExtension = '.tiff');
+end;
+
+
+function CustomWideTrim(const S: WideString): WideString;
+var
+  First, Last: Integer;
+begin
+  First := 1;
+  while First <= Length(S) do
+  begin
+    if S[First] <> ' ' then Break;
+    Inc(First);
+  end;
+
+
+  Last := Length(S);
+  while Last >= First do
+  begin
+    if S[Last] <> ' ' then Break;
+    Dec(Last);
+  end;
+
+
+  if Last < First then
+    Result := ''
+  else
+    Result := WideCopy(S, First, Last - First + 1);
+end;
+
+
+function RemoveDocumentLabels(const S: WideString): WideString;
+begin
+  Result := S;
+  Result := WideReplaceStr(Result, '00.견적서', '');
+  Result := WideReplaceStr(Result, '01.거래명세서', '');
+  Result := WideReplaceStr(Result, '03.물품사진', '');
+  Result := WideReplaceStr(Result, '구매기안서', '');
+  Result := WideReplaceStr(Result, '견적서', '');
+  Result := WideReplaceStr(Result, '거래명세서', '');
+  Result := WideReplaceStr(Result, '거래명세표', '');
+  Result := WideReplaceStr(Result, '거래내역서', '');
+  Result := WideReplaceStr(Result, '물품사진', '');
+end;
+
+
+function NormalizeRemainder(const S: WideString): WideString;
+begin
+  Result := S;
+
+
+  while WidePos('  ', Result) > 0 do
+    Result := WideReplaceStr(Result, '  ', ' ');
+
+
+  while WidePos('__', Result) > 0 do
+    Result := WideReplaceStr(Result, '__', '_');
+
+
+  while WidePos('_ ', Result) > 0 do
+    Result := WideReplaceStr(Result, '_ ', '_');
+
+
+  while WidePos(' _', Result) > 0 do
+    Result := WideReplaceStr(Result, ' _', '_');
+
+
+  Result := CustomWideTrim(Result);
+
+
+  while Length(Result) > 0 do
+  begin
+    if Result[1] <> '_' then Break;
+    Result := WideCopy(Result, 2, Length(Result) - 1);
+  end;
+
+
+  while Length(Result) > 0 do
+  begin
+    if Result[Length(Result)] <> '_' then Break;
+    Result := WideCopy(Result, 1, Length(Result) - 1);
+  end;
+
+
+  Result := CustomWideTrim(Result);
+end;
+
+
+begin
+  StartLogRun;
+  LowerCurrentName := WideLowerCase(FileName);
+
+
+  if WidePos('03.물품사진_', LowerCurrentName) = 1 then Exit;
+
+
+  NameList[0] := '곽신우';
+  NameList[1] := '김민규';
+  NameList[2] := '이슬기';
+  NameList[3] := '임설와';
+  NameList[4] := '정우형';
+  NameList[5] := '박승주';
+
+
+  PersonName := '곽신우';
+  OriginalBaseName := WideExtractBaseName(FileName);
+  FileExtension := WideExtractFileExt(FileName);
+  TempOriginalBaseName := OriginalBaseName;
+
+
+  ExistingDateToken := '';
+  ExistingDate := ExtractExistingDateToYYMMDD(
+    OriginalBaseName,
+    ExistingDateToken
+  );
+
+
+  if Length(ExistingDate) > 0 then
+    TakenDate := ExistingDate
+  else
+  begin
+    DateTime := FileTimeModified(FilePath);
+    TakenDate := FormatDateTime('yymmdd', DateTime);
+  end;
+
+
+  for i := Low(NameList) to High(NameList) do
+  begin
+    CurrentName := NameList[i];
+
+
+    if WidePos(
+      WideLowerCase(CurrentName),
+      WideLowerCase(OriginalBaseName)
+    ) > 0 then
+    begin
+      PersonName := CurrentName;
+      TempOriginalBaseName :=
+        WideReplaceStr(TempOriginalBaseName, ' ' + CurrentName + ' ', ' ');
+      TempOriginalBaseName :=
+        WideReplaceStr(TempOriginalBaseName, '_' + CurrentName + '_', '_');
+      TempOriginalBaseName :=
+        WideReplaceStr(TempOriginalBaseName, CurrentName, '');
+      Break;
+    end;
+  end;
+
+
+  DocumentType := 'NA';
+
+
+  if IsSupportedDocumentExtension(FileExtension) then
+  begin
+    DocumentType := AnalyzeSupportedDocument(
+      FileName,
+      FilePath,
+      ExtractorMeta,
+      ExtractorExitCode,
+      ExtractedTextLength,
+      QuotationScore,
+      TransactionScore,
+      QuotationTitlePos,
+      TransactionTitlePos,
+      DetectedBy
+    );
+
+
+    LogClassification(
+      FilePath,
+      FileExtension,
+      ExtractorMeta,
+      ExtractorExitCode,
+      ExtractedTextLength,
+      QuotationScore,
+      TransactionScore,
+      QuotationTitlePos,
+      TransactionTitlePos,
+      DetectedBy,
+      DocumentType
+    );
+  end
+  else if IsImageExtension(FileExtension) then
+  begin
+    DocumentType := '03.물품사진';
+  end
+  else if WidePos('물품사진', LowerCurrentName) > 0 then
+  begin
+    DocumentType := '03.물품사진';
+  end;
+
+
+  if DocumentType = 'NA' then Exit;
+
+
+  TempOriginalBaseName := RemoveDocumentLabels(TempOriginalBaseName);
+
+
+  if Length(ExistingDateToken) > 0 then
+  begin
+    TempOriginalBaseName :=
+      WideReplaceStr(TempOriginalBaseName, ExistingDateToken, '');
+  end;
+
+
+  TempOriginalBaseName :=
+    WideReplaceStr(TempOriginalBaseName, '선생님', '');
+
+
+  TempOriginalBaseName := NormalizeRemainder(TempOriginalBaseName);
+
+
+  FileName := DocumentType + '_' + TakenDate + '_' + PersonName;
+
+
+  if Length(TempOriginalBaseName) > 0 then
+    FileName := FileName + '_' + TempOriginalBaseName;
+
+
+  FileName := FileName + FileExtension;
+end.
