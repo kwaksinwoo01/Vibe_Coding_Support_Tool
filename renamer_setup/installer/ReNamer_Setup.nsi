@@ -103,12 +103,12 @@ Section "MainProgram" SEC_MAIN
   ; 유지보수용 내부 사본입니다.
   SetOutPath "$INSTDIR\renamer"
   Delete "$INSTDIR\renamer\renamer_document_classifier_7_2.txt"
-  File /oname="${RENAMER_SCRIPT_NAME}" "..\renamer\renamer_document_classifier_7_2.txt"
+  File "/oname=${RENAMER_SCRIPT_NAME}" "..\renamer\renamer_document_classifier_7_2.txt"
 
   ; 일반 사용자가 ReNamer에서 바로 찾을 수 있도록 기본 Scripts 폴더에 설치합니다.
   CreateDirectory "${RENAMER_SCRIPT_DIR}"
   SetOutPath "${RENAMER_SCRIPT_DIR}"
-  File /oname="${RENAMER_SCRIPT_NAME}" "..\renamer\renamer_document_classifier_7_2.txt"
+  File "/oname=${RENAMER_SCRIPT_NAME}" "..\renamer\renamer_document_classifier_7_2.txt"
 
   SetOutPath "$INSTDIR\support"
   File "..\scripts\install_optional_dependencies.ps1"
