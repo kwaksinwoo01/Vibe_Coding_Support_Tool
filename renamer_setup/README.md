@@ -7,17 +7,25 @@
 1. `ReNamer_Setup.exe` 실행
 2. 설치 화면에서 **기본 사용자 이름** 입력
 3. 필요한 경우 추가 인식 이름을 쉼표로 입력
-4. 설치 완료 후 바탕 화면의 `ReNamer 문서 분류 스크립트`를 ReNamer PascalScript 규칙에 한 번 불러오기
-5. 이후 PDF/Excel/ODS 파일을 ReNamer에 넣어 사용
+4. 설치 완료 후 ReNamer에서 `PascalScript` 규칙 추가
+5. `Scripts` 메뉴에서 **`7.0_자동이름 변경 시스템.pas`** 선택
+6. 이후 PDF/Excel/ODS 파일을 ReNamer에 넣어 사용
 
-사용자는 Python 소스나 설정 파일을 직접 수정하지 않습니다.
+설치기는 다음 ReNamer 기본 스크립트 폴더를 자동으로 생성하고 PascalScript를 직접 배치합니다.
+
+```text
+%UserProfile%\Documents\den4b\ReNamer\Scripts\7.0_자동이름 변경 시스템.pas
+```
+
+사용자는 숨김 폴더인 `AppData`를 찾거나 `.txt` 확장자를 `.pas`로 변경할 필요가 없습니다.
 
 ## 핵심 설계
 
 - Python 런타임과 `python-calamine`은 PyInstaller **onedir** 빌드에 포함합니다.
 - 일반 사용자 PC에는 Python을 별도로 설치하지 않습니다.
-- NSIS 설치기는 `%LOCALAPPDATA%\ReNamerDocumentClassifier`에 프로그램을 설치합니다.
-- 설치기 사용자 입력은 `config\user.ini`에 저장합니다.
+- NSIS 설치기는 `%LOCALAPPDATA%\ReNamerDocumentClassifier`에 분류 엔진을 설치합니다.
+- ReNamer PascalScript는 `%UserProfile%\Documents\den4b\ReNamer\Scripts`에 자동 설치합니다.
+- 설치기 사용자 입력은 `config\user.ini`와 `config\names.txt`에 저장합니다.
 - ReNamer PascalScript는 고정 `NameList`를 사용하지 않고 설치기가 생성한 설정을 읽습니다.
 - PDF 및 Excel/ODS 본문은 `classifier.exe`가 분석합니다.
 - 판정 결과는 `QUOTE`, `TRANSACTION`, `UNKNOWN`, `ERROR` 중 하나만 표준 출력으로 반환합니다.
@@ -66,6 +74,12 @@ renamer_setup/
    └─ test_config.py
 ```
 
+저장소의 `renamer_document_classifier_7_2.txt`는 빌드용 원본입니다. 설치 파일 안에서는 다음 사용자용 이름으로 출력됩니다.
+
+```text
+7.0_자동이름 변경 시스템.pas
+```
+
 ## 반드시 지켜야 하는 문자 인코딩
 
 설치 화면과 PowerShell 메시지에 한글이 들어 있으므로 다음 파일은 반드시 **UTF-8 with BOM**으로 저장해야 합니다.
@@ -102,7 +116,7 @@ VS Code에서 수정할 때 오른쪽 아래 인코딩 표시를 눌러 **Save w
 ### 필요 도구
 
 - Windows 10 또는 Windows 11
-- Python 3.11 이상
+- Python 3.11~3.13
 - NSIS 3.x
 - PowerShell 5.1 이상
 
@@ -127,16 +141,21 @@ All required installer sources use UTF-8 BOM.
 
 ### 3. 설치 파일 전체 빌드
 
+Python 3.13 실제 경로를 지정하는 권장 명령:
+
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
-  -File .\scripts\build.ps1
+  -File .\scripts\build.ps1 `
+  -PythonPath "C:\Users\user\AppData\Local\Programs\Python\Python313\python.exe"
 ```
 
 테스트를 생략해야 하는 임시 개발 빌드만 다음 옵션을 사용합니다.
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
-  -File .\scripts\build.ps1 -SkipTests
+  -File .\scripts\build.ps1 `
+  -PythonPath "C:\Users\user\AppData\Local\Programs\Python\Python313\python.exe" `
+  -SkipTests
 ```
 
 빌드 결과:
@@ -144,6 +163,17 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
 ```text
 dist\ReNamer_Setup.exe
 ```
+
+## 설치 후 ReNamer 설정
+
+1. ReNamer 실행
+2. 규칙 목록에서 `PascalScript` 추가
+3. PascalScript 편집기의 `Scripts` 메뉴 열기
+4. `7.0_자동이름 변경 시스템.pas` 선택
+5. 컴파일 확인 후 규칙 추가
+6. 현재 규칙을 ReNamer Preset으로 저장
+
+설치기는 시작 메뉴와 바탕 화면에도 `7.0 자동이름 변경 시스템` 바로가기를 생성합니다.
 
 ## 한글이 깨질 때 확인할 항목
 
@@ -165,19 +195,30 @@ ReNamer Document Classifier > 사용자 설정 변경
 
 ## 설치 위치
 
+분류 엔진과 설정:
+
 ```text
 %LOCALAPPDATA%\ReNamerDocumentClassifier\
 ├─ classifier\
 ├─ config\user.ini
 ├─ config\names.txt
 ├─ logs\classification.log
-├─ renamer\renamer_document_classifier_7_2.txt
+├─ renamer\7.0_자동이름 변경 시스템.pas
 └─ tools\
 ```
+
+ReNamer에서 사용자가 선택하는 스크립트:
+
+```text
+%UserProfile%\Documents\den4b\ReNamer\Scripts\7.0_자동이름 변경 시스템.pas
+```
+
+제거 프로그램은 ReNamer Scripts 폴더에 설치한 해당 `.pas` 파일도 함께 삭제합니다.
 
 ## 배포 원칙
 
 - 일반 사용자에게 `.py`, `.cmd`, 패키지 설치 명령을 직접 제공하지 않습니다.
+- 일반 사용자는 `.txt` 확장자를 `.pas`로 변경하지 않습니다.
 - 배포물은 로컬에서 빌드한 `ReNamer_Setup.exe` 하나를 기본으로 합니다.
 - 소스 파일은 개발 및 유지보수 목적으로만 저장합니다.
-- 설치 파일을 배포하기 전 한글 표시, 사용자 이름 저장, 제거 기능을 실제 Windows PC에서 확인합니다.
+- 설치 파일을 배포하기 전 한글 표시, 사용자 이름 저장, ReNamer Scripts 등록, 제거 기능을 실제 Windows PC에서 확인합니다.
