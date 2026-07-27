@@ -1,6 +1,6 @@
 ﻿param(
     [switch]$SkipTests,
-    [switch]$SkipPythonInstall
+    [switch]$AllowPythonInstall
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,29 +44,30 @@ function Test-PythonCandidate {
     )
 
     $executable = [string]$Candidate.Executable
-    if (-not $executable) {
+    if (-not $executable -or -not (Test-Path -LiteralPath $executable)) {
         return $false
     }
 
-    # Microsoft Store 앱 실행 별칭은 실제 Python이 아니며 실행 시 WinGet/Store를 열 수 있습니다.
+    # WindowsApps의 python.exe/python3.exe는 Store 실행 별칭일 수 있습니다.
+    # py.exe는 실제 Python Launcher일 수 있으므로 WindowsApps에 있어도 실행 검증합니다.
     $windowsAppsRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps'
-    if ($executable.StartsWith($windowsAppsRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-        return $false
-    }
+    $fileName = [System.IO.Path]::GetFileName($executable)
+    $isStorePythonAlias =
+        $executable.StartsWith(
+            $windowsAppsRoot,
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -and
+        ($fileName -in @('python.exe', 'python3.exe', 'pythonw.exe'))
 
-    if (-not (Test-Path -LiteralPath $executable)) {
+    if ($isStorePythonAlias) {
         return $false
     }
 
     $prefixArguments = @($Candidate.PrefixArguments)
-    $versionScript = @'
-import sys
-print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
-raise SystemExit(0 if sys.version_info >= (3, 11) else 9)
-'@
+    $versionProbe = 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"); raise SystemExit(0 if (3, 11) <= sys.version_info[:2] <= (3, 13) else 9)'
 
     try {
-        $versionOutput = & $executable @prefixArguments -c $versionScript 2>$null
+        $versionOutput = & $executable @prefixArguments -c $versionProbe 2>$null
         $exitCode = $LASTEXITCODE
     }
     catch {
@@ -124,10 +125,33 @@ function Get-RegistryPythonExecutables {
 function Get-PythonCandidates {
     $candidates = @()
 
+    # 현재 활성화된 가상환경을 가장 먼저 사용합니다.
+    if ($env:VIRTUAL_ENV) {
+        $activeVenvPython = Join-Path $env:VIRTUAL_ENV 'Scripts\python.exe'
+        if (Test-Path -LiteralPath $activeVenvPython) {
+            $candidates += New-PythonCandidate -Executable $activeVenvPython
+        }
+    }
+
+    # 사용자가 설치한 Python 3.13을 명시적으로 최우선 탐색합니다.
     $pyLauncher = Get-Command 'py.exe' -ErrorAction SilentlyContinue
-    if ($pyLauncher) {
-        $candidates += New-PythonCandidate -Executable $pyLauncher.Source -PrefixArguments @('-3.11')
-        $candidates += New-PythonCandidate -Executable $pyLauncher.Source -PrefixArguments @('-3')
+    if ($pyLauncher -and $pyLauncher.Source) {
+        foreach ($selector in @('-3.13', '-3.12', '-3.11', '-3')) {
+            $candidates += New-PythonCandidate `
+                -Executable $pyLauncher.Source `
+                -PrefixArguments @($selector)
+        }
+    }
+
+    $knownUserInstallPaths = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python311\python.exe')
+    )
+    foreach ($pythonPath in $knownUserInstallPaths) {
+        if (Test-Path -LiteralPath $pythonPath) {
+            $candidates += New-PythonCandidate -Executable $pythonPath
+        }
     }
 
     foreach ($commandName in @('python.exe', 'python3.exe', 'python')) {
@@ -139,23 +163,6 @@ function Get-PythonCandidates {
 
     foreach ($pythonPath in Get-RegistryPythonExecutables) {
         $candidates += New-PythonCandidate -Executable $pythonPath
-    }
-
-    $searchRoots = @(
-        (Join-Path $env:LOCALAPPDATA 'Programs\Python'),
-        $env:ProgramFiles,
-        ${env:ProgramFiles(x86)},
-        'C:\'
-    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
-
-    foreach ($searchRoot in $searchRoots) {
-        $directoryPattern = if ($searchRoot -eq 'C:\') { 'Python*' } else { 'Python*' }
-        foreach ($directory in Get-ChildItem -LiteralPath $searchRoot -Directory -Filter $directoryPattern -ErrorAction SilentlyContinue) {
-            $pythonPath = Join-Path $directory.FullName 'python.exe'
-            if (Test-Path -LiteralPath $pythonPath) {
-                $candidates += New-PythonCandidate -Executable $pythonPath
-            }
-        }
     }
 
     return $candidates
@@ -173,7 +180,7 @@ function Find-Python {
         $seen[$key] = $true
 
         if (Test-PythonCandidate -Candidate $candidate) {
-            $displayCommand = ([string]$candidate.Executable)
+            $displayCommand = [string]$candidate.Executable
             if ($prefixText) {
                 $displayCommand += ' ' + $prefixText
             }
@@ -192,7 +199,7 @@ function Refresh-ProcessPath {
 }
 
 function Install-BuildPython {
-    if ($SkipPythonInstall) {
+    if (-not $AllowPythonInstall) {
         return $false
     }
 
@@ -202,22 +209,33 @@ function Install-BuildPython {
     }
 
     Write-Host ''
-    Write-Host 'Python 3.11 이상을 찾지 못했습니다.' -ForegroundColor Yellow
-    Write-Host 'WinGet으로 빌드용 Python 설치를 시도합니다.' -ForegroundColor Yellow
+    Write-Host 'Python 3.11~3.13을 찾지 못했습니다.' -ForegroundColor Yellow
+    Write-Host 'AllowPythonInstall 옵션에 따라 WinGet 설치를 시도합니다.' -ForegroundColor Yellow
 
-    & $winget.Source source update --name winget | Out-Host
-
-    foreach ($packageId in @('Python.Python.3.12', 'Python.Python.3.11')) {
+    $logPath = Join-Path $ProjectRoot 'python-install.log'
+    foreach ($packageId in @('Python.Python.3.13', 'Python.Python.3.12', 'Python.Python.3.11')) {
         Write-Host "Installing $packageId ..."
-        & $winget.Source install `
-            --id $packageId `
-            --exact `
-            --source winget `
-            --scope user `
-            --silent `
-            --disable-interactivity `
-            --accept-package-agreements `
-            --accept-source-agreements | Out-Host
+
+        $arguments = @(
+            'install',
+            '--id', $packageId,
+            '--exact',
+            '--source', 'winget',
+            '--scope', 'user',
+            '--silent',
+            '--disable-interactivity',
+            '--accept-package-agreements',
+            '--accept-source-agreements'
+        )
+
+        $process = Start-Process `
+            -FilePath $winget.Source `
+            -ArgumentList $arguments `
+            -Wait `
+            -PassThru `
+            -NoNewWindow `
+            -RedirectStandardOutput $logPath `
+            -RedirectStandardError ($logPath + '.error')
 
         Refresh-ProcessPath
         $installedPython = Find-Python
@@ -225,6 +243,8 @@ function Install-BuildPython {
             $script:PythonCommand = $installedPython
             return $true
         }
+
+        Write-Host "WinGet exit code: $($process.ExitCode). Log: $logPath" -ForegroundColor Yellow
     }
 
     return $false
@@ -252,14 +272,15 @@ if (-not $script:PythonCommand) {
 
 if (-not $script:PythonCommand) {
     throw @'
-실제로 실행 가능한 Python 3.11 이상을 찾지 못했습니다.
-Windows의 앱 실행 별칭 python.exe는 빌드용 Python으로 사용하지 않습니다.
+실행 가능한 Python 3.11~3.13을 찾지 못했습니다.
+WindowsApps의 python.exe 실행 별칭은 빌드용 Python으로 사용하지 않습니다.
 
-다음 명령 중 하나로 Python을 설치한 뒤 새 PowerShell을 열어 다시 실행하세요.
-  winget install --id Python.Python.3.12 --exact --source winget
-  winget install --id Python.Python.3.11 --exact --source winget
+Python 3.13이 설치되어 있다면 다음 명령이 성공하는지 확인하세요.
+  py -3.13 --version
+  py -3.13 -c "import sys; print(sys.executable)"
 
-자동 설치를 원하지 않는 경우 build.ps1 -SkipPythonInstall 옵션을 사용할 수 있습니다.
+자동 설치는 기본적으로 실행하지 않습니다. 필요한 경우에만 다음처럼 실행하세요.
+  .\scripts\build.ps1 -AllowPythonInstall
 '@
 }
 
