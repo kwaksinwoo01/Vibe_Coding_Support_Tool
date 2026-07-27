@@ -56,7 +56,16 @@ def inspect_document(
         person_name=person_name,
         source_path=path,
     )
-    write_inspection_log(result)
+
+    try:
+        write_inspection_log(result)
+    except OSError as exc:
+        # Classification must still be returned when only the optional log file
+        # cannot be written in a restricted GUI-host environment.
+        extraction.warnings.append(
+            f"log_write_failed:{type(exc).__name__}:{exc}"
+        )
+
     return result
 
 
