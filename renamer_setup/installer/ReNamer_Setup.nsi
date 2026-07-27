@@ -7,10 +7,12 @@ Unicode true
 !include "FileFunc.nsh"
 
 !define PRODUCT_NAME "ReNamer Document Classifier"
-!define PRODUCT_VERSION "7.2.0"
+!define PRODUCT_VERSION "7.2.1"
 !define PRODUCT_PUBLISHER "KWAKSINWOO"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\ReNamerDocumentClassifier.exe"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReNamerDocumentClassifier"
+!define RENAMER_SCRIPT_NAME "7.0_자동이름 변경 시스템.pas"
+!define RENAMER_SCRIPT_DIR "$DOCUMENTS\den4b\ReNamer\Scripts"
 
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 OutFile "..\dist\ReNamer_Setup.exe"
@@ -37,8 +39,8 @@ Page custom UserSettingsPageCreate UserSettingsPageLeave
 !define MUI_FINISHPAGE_RUN "$INSTDIR\classifier\classifier.exe"
 !define MUI_FINISHPAGE_RUN_PARAMETERS "configure"
 !define MUI_FINISHPAGE_RUN_TEXT "설치된 사용자 설정 확인 및 변경"
-!define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\renamer\renamer_document_classifier_7_2.txt"
-!define MUI_FINISHPAGE_SHOWREADME_TEXT "ReNamer 스크립트 파일 열기"
+!define MUI_FINISHPAGE_SHOWREADME "${RENAMER_SCRIPT_DIR}\${RENAMER_SCRIPT_NAME}"
+!define MUI_FINISHPAGE_SHOWREADME_TEXT "ReNamer용 '7.0 자동이름 변경 시스템' 스크립트 열기"
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -98,8 +100,15 @@ Section "MainProgram" SEC_MAIN
   SetOutPath "$INSTDIR\classifier"
   File /r "..\dist\classifier\*.*"
 
+  ; 유지보수용 내부 사본입니다.
   SetOutPath "$INSTDIR\renamer"
-  File "..\renamer\renamer_document_classifier_7_2.txt"
+  Delete "$INSTDIR\renamer\renamer_document_classifier_7_2.txt"
+  File /oname="${RENAMER_SCRIPT_NAME}" "..\renamer\renamer_document_classifier_7_2.txt"
+
+  ; 일반 사용자가 ReNamer에서 바로 찾을 수 있도록 기본 Scripts 폴더에 설치합니다.
+  CreateDirectory "${RENAMER_SCRIPT_DIR}"
+  SetOutPath "${RENAMER_SCRIPT_DIR}"
+  File /oname="${RENAMER_SCRIPT_NAME}" "..\renamer\renamer_document_classifier_7_2.txt"
 
   SetOutPath "$INSTDIR\support"
   File "..\scripts\install_optional_dependencies.ps1"
@@ -150,22 +159,26 @@ Section "MainProgram" SEC_MAIN
     "$INSTDIR\classifier\classifier.exe" \
     "clear-log"
   CreateShortCut \
-    "$SMPROGRAMS\ReNamer Document Classifier\ReNamer 스크립트.lnk" \
-    "$INSTDIR\renamer\renamer_document_classifier_7_2.txt"
+    "$SMPROGRAMS\ReNamer Document Classifier\7.0 자동이름 변경 시스템 스크립트.lnk" \
+    "${RENAMER_SCRIPT_DIR}\${RENAMER_SCRIPT_NAME}"
   CreateShortCut \
     "$SMPROGRAMS\ReNamer Document Classifier\제거.lnk" \
     "$INSTDIR\Uninstall.exe"
 
+  Delete "$DESKTOP\ReNamer 문서 분류 스크립트.lnk"
   CreateShortCut \
-    "$DESKTOP\ReNamer 문서 분류 스크립트.lnk" \
-    "$INSTDIR\renamer\renamer_document_classifier_7_2.txt"
+    "$DESKTOP\7.0 자동이름 변경 시스템.lnk" \
+    "${RENAMER_SCRIPT_DIR}\${RENAMER_SCRIPT_NAME}"
 SectionEnd
 
 Section "Uninstall"
   SetShellVarContext current
 
   Delete "$DESKTOP\ReNamer 문서 분류 스크립트.lnk"
+  Delete "$DESKTOP\7.0 자동이름 변경 시스템.lnk"
   RMDir /r "$SMPROGRAMS\ReNamer Document Classifier"
+
+  Delete "${RENAMER_SCRIPT_DIR}\${RENAMER_SCRIPT_NAME}"
 
   DeleteRegKey HKCU "${PRODUCT_UNINST_KEY}"
   DeleteRegKey HKCU "${PRODUCT_DIR_REGKEY}"
