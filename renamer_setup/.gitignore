@@ -1,0 +1,8 @@
+.venv-build/
+build/
+dist/
+*.spec.bak
+__pycache__/
+.pytest_cache/
+*.py[cod]
+vendor/tools/

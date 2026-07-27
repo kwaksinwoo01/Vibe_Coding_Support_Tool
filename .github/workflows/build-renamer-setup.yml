@@ -1,0 +1,48 @@
+name: Validate ReNamer Setup Source
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "renamer_setup/**"
+      - ".github/workflows/build-renamer-setup.yml"
+  pull_request:
+    paths:
+      - "renamer_setup/**"
+      - ".github/workflows/build-renamer-setup.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: renamer_setup/pyproject.toml
+
+      - name: Verify UTF-8 BOM sources
+        shell: powershell
+        working-directory: renamer_setup
+        run: ./scripts/verify_text_encoding.ps1
+
+      - name: Install Python test dependencies
+        shell: powershell
+        working-directory: renamer_setup
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -e ".[build]"
+
+      - name: Run unit tests
+        shell: powershell
+        working-directory: renamer_setup
+        run: python -m pytest -q
