@@ -8,6 +8,81 @@ The document classifier works when invoked directly from PowerShell, but fails w
 
 Do not apply another speculative handle workaround. First reproduce the error locally and obtain the exact traceback/API call that raises `OSError: [WinError 6]`.
 
+## Resolution verified on 2026-07-27
+
+The failure had two connected causes:
+
+1. The installer used the default value of the App Paths registry key as an
+   install directory. That value is the full `classifier.exe` path, so every
+   reinstall appended another `classifier` directory. New installers updated
+   nested copies while ReNamer continued to run the stale executable at the
+   documented path.
+2. The stale pre-workaround executable called `subprocess.run` with inherited
+   stdin. ReNamer `ExecConsoleApp` supplied an invalid standard-input handle.
+   Python 3.13 failed before child-process creation at
+   `subprocess.py:1364`, `_winapi.GetStdHandle(_winapi.STD_INPUT_HANDLE)`.
+
+The exact reproduced traceback from the historical `f600bb2` runtime was:
+
+```text
+renamer_document_classifier/cli.py:192 main
+renamer_document_classifier/service.py:40 inspect_document
+renamer_document_classifier/extractors.py:468 extract_primary_text
+renamer_document_classifier/extractors.py:143 extract_pdf_text
+renamer_document_classifier/extractors.py:119 _run
+subprocess.py:554 run
+subprocess.py:1005 Popen.__init__
+subprocess.py:1364 _get_handles
+OSError: [WinError 6] 핸들이 잘못되었습니다
+```
+
+Process Monitor confirmed the boundary. In the failing historical run,
+`classifier.exe` was created three times while `pdftotext.exe`,
+`pdftoppm.exe`, and `tesseract.exe` were each created zero times. With the
+verified fix, all four process types were created five times for five PDFs.
+
+The minimal runtime fix is scoped to the external-tool boundary:
+`extractors._run()` passes `stdin=subprocess.DEVNULL`. The global stdin
+replacement, `subprocess.run` monkey patch, and custom `CreateProcessW`
+implementation were removed. `launcher.py` now keeps only an earliest-possible
+file diagnostic at `logs/launcher_runtime.log`.
+
+The installer now reads `InstallLocation` from the uninstall registry key.
+Version `7.2.4` was retained. A clean uninstall and reinstall produced matching
+hashes:
+
+```text
+build classifier.exe:     F267EED48F5EE85FCA129E8D5C62F21E776BA13DE644FCE60A67B3DB7D9DF5D7
+installed classifier.exe: F267EED48F5EE85FCA129E8D5C62F21E776BA13DE644FCE60A67B3DB7D9DF5D7
+```
+
+Direct PowerShell inspection returned `STATUS=OK`, `KIND=TRANSACTION`, and
+exit code 0. Final ReNamer verification processed five PDFs, all with
+`CLASSIFIER_EXIT code=0`; all five produced `KIND=TRANSACTION` and
+`PREVIEW_RENAMED`. The ReNamer new-name column
+visibly showed all five `01.거래명세서_...` previews. Tests passed (`13 passed`),
+and both PyInstaller and NSIS builds succeeded.
+
+The fifth PDF (`SAuthor26071620371.pdf`) is an image-only scan. Tesseract
+`--psm 6` extracted 1,266 body characters but omitted the isolated title,
+so the first verified build returned `KIND=UNKNOWN`. The same rendered image
+with `--psm 3` extracted the transaction title at position 37 and classified
+it as `TRANSACTION` with score 100. PDF OCR is now adaptive and stops as soon
+as a classification succeeds:
+
+```text
+PSM 6 at 220 dpi
+PSM 3 at 220 dpi
+PSM 11 at 220 dpi
+PSM 3 at 300 dpi grayscale
+PSM 11 at 300 dpi grayscale
+```
+
+Each new OCR attempt is classified on its own before accumulated text is
+classified, preventing a title found by a later mode from being pushed beyond
+the 2,000-character title scan boundary. Existing PDFs still stop after PSM 6;
+only the problem scan advanced to PSM 3. Tests passed (`13 passed`).
+
 ## Repository and scope
 
 - Repository: `kwaksinwoo01/Vibe_Coding_Support_Tool`

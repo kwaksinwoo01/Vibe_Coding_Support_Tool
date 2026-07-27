@@ -119,6 +119,7 @@ def _run(
     return subprocess.run(
         arguments,
         cwd=str(cwd) if cwd else None,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -260,7 +261,12 @@ def extract_ooxml_drawing_text(path: Path, limits: ExtractionLimits) -> Extracti
     return result
 
 
-def _ocr_image(image_path: Path, limits: ExtractionLimits) -> ExtractionResult:
+def _ocr_image(
+    image_path: Path,
+    limits: ExtractionLimits,
+    *,
+    page_segmentation_mode: int = 6,
+) -> ExtractionResult:
     result = ExtractionResult(fallback_used=True)
     tesseract = find_tesseract()
     if not tesseract:
@@ -275,13 +281,15 @@ def _ocr_image(image_path: Path, limits: ExtractionLimits) -> ExtractionResult:
             "-l",
             "kor+eng",
             "--psm",
-            "6",
+            str(page_segmentation_mode),
         ],
         timeout_seconds=limits.timeout_seconds,
     )
     if process.returncode == 0:
         result.text = _truncate(process.stdout, limits.max_characters)
-        result.methods.append("tesseract")
+        result.methods.extend(
+            ["tesseract", f"tesseract-psm{page_segmentation_mode}"]
+        )
     else:
         result.warnings.append(
             f"tesseract_failed:returncode={process.returncode}:stderr={process.stderr.strip()}"
@@ -422,7 +430,14 @@ def render_spreadsheet_to_pdf(path: Path, limits: ExtractionLimits) -> tuple[Pat
     return None, None, excel_result
 
 
-def ocr_pdf(path: Path, limits: ExtractionLimits) -> ExtractionResult:
+def ocr_pdf(
+    path: Path,
+    limits: ExtractionLimits,
+    *,
+    page_segmentation_mode: int = 6,
+    dpi: int | None = None,
+    grayscale: bool = False,
+) -> ExtractionResult:
     result = ExtractionResult(fallback_used=True)
     pdftoppm = find_pdftoppm()
     if not pdftoppm:
@@ -431,19 +446,21 @@ def ocr_pdf(path: Path, limits: ExtractionLimits) -> ExtractionResult:
 
     with tempfile.TemporaryDirectory(prefix="renamer_pdf_ocr_") as temp_dir:
         prefix = Path(temp_dir) / "page"
+        active_dpi = dpi or limits.ocr_dpi
+        render_arguments = [
+            str(pdftoppm),
+            "-f",
+            "1",
+            "-l",
+            str(limits.max_pages),
+            "-r",
+            str(active_dpi),
+        ]
+        if grayscale:
+            render_arguments.append("-gray")
+        render_arguments.extend(["-png", str(path), str(prefix)])
         process = _run(
-            [
-                str(pdftoppm),
-                "-f",
-                "1",
-                "-l",
-                str(limits.max_pages),
-                "-r",
-                str(limits.ocr_dpi),
-                "-png",
-                str(path),
-                str(prefix),
-            ],
+            render_arguments,
             timeout_seconds=limits.timeout_seconds,
         )
         if process.returncode != 0:
@@ -452,9 +469,20 @@ def ocr_pdf(path: Path, limits: ExtractionLimits) -> ExtractionResult:
             )
             return result
 
-        result.methods.append("pdftoppm")
+        result.methods.extend(
+            [
+                "pdftoppm",
+                f"pdftoppm-dpi{active_dpi}{'-gray' if grayscale else ''}",
+            ]
+        )
         for image_path in sorted(Path(temp_dir).glob("page-*.png")):
-            result.extend(_ocr_image(image_path, limits))
+            result.extend(
+                _ocr_image(
+                    image_path,
+                    limits,
+                    page_segmentation_mode=page_segmentation_mode,
+                )
+            )
             if len(result.text) >= limits.max_characters:
                 break
 

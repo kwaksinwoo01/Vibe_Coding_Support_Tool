@@ -17,7 +17,7 @@ Unicode true
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 OutFile "..\dist\ReNamer_Setup.exe"
 InstallDir "$LOCALAPPDATA\ReNamerDocumentClassifier"
-InstallDirRegKey HKCU "${PRODUCT_DIR_REGKEY}" ""
+InstallDirRegKey HKCU "${PRODUCT_UNINST_KEY}" "InstallLocation"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 SetCompressorDictSize 64

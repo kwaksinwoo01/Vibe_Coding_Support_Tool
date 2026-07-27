@@ -17,6 +17,15 @@ from .extractors import (
 from .logging_utils import append_log
 
 
+PDF_OCR_ATTEMPTS: tuple[dict[str, int | bool], ...] = (
+    {"page_segmentation_mode": 6},
+    {"page_segmentation_mode": 3},
+    {"page_segmentation_mode": 11},
+    {"page_segmentation_mode": 3, "dpi": 300, "grayscale": True},
+    {"page_segmentation_mode": 11, "dpi": 300, "grayscale": True},
+)
+
+
 @dataclass(slots=True)
 class InspectionResult:
     classification: ClassificationResult
@@ -27,6 +36,31 @@ class InspectionResult:
 
 def _classify(text: str) -> ClassificationResult:
     return classify_document_text(text)
+
+
+def _extract_pdf_ocr_adaptively(
+    path: Path,
+    extraction: ExtractionResult,
+    limits: ExtractionLimits,
+) -> ClassificationResult:
+    classification = _classify(extraction.text)
+
+    for attempt_options in PDF_OCR_ATTEMPTS:
+        attempt = ocr_pdf(path, limits, **attempt_options)
+        extraction.extend(attempt)
+
+        # Classify the latest OCR text on its own first. Otherwise a title found
+        # by a later layout mode can land beyond the title scan limit after the
+        # earlier OCR text and still be missed.
+        attempt_classification = _classify(attempt.text)
+        if attempt_classification.kind is not DocumentKind.UNKNOWN:
+            return attempt_classification
+
+        classification = _classify(extraction.text)
+        if classification.kind is not DocumentKind.UNKNOWN:
+            return classification
+
+    return classification
 
 
 def inspect_document(
@@ -43,8 +77,11 @@ def inspect_document(
     extension = path.suffix.casefold()
     if classification.kind is DocumentKind.UNKNOWN:
         if extension in PDF_EXTENSIONS:
-            extraction.extend(ocr_pdf(path, active_limits))
-            classification = _classify(extraction.text)
+            classification = _extract_pdf_ocr_adaptively(
+                path,
+                extraction,
+                active_limits,
+            )
         elif extension in SPREADSHEET_EXTENSIONS:
             extraction.extend(extract_spreadsheet_fallback(path, active_limits))
             classification = _classify(extraction.text)
