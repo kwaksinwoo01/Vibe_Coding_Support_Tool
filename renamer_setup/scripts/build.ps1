@@ -59,7 +59,7 @@ function Test-PythonExecutable {
         return $false
     }
 
-    Write-Host "Using Python $versionText: $Executable" -ForegroundColor Green
+    Write-Host ('Using Python {0}: {1}' -f $versionText, $Executable) -ForegroundColor Green
     return $true
 }
 
@@ -103,7 +103,7 @@ function Resolve-BuildPython {
         if (Test-PythonExecutable -Executable $explicitPath) {
             return (Resolve-Path -LiteralPath $explicitPath).Path
         }
-        throw "The specified PythonPath is not a supported Python 3.11-3.13 executable: $explicitPath"
+        throw ('The specified PythonPath is not a supported Python 3.11-3.13 executable: {0}' -f $explicitPath)
     }
 
     if ($env:VIRTUAL_ENV) {
@@ -179,12 +179,12 @@ if (-not (Test-Path -LiteralPath $VenvPython)) {
     Write-Host 'Creating build virtual environment...'
     & $BuildPython -m venv $Venv
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to create build virtual environment with: $BuildPython"
+        throw ('Failed to create build virtual environment with: {0}' -f $BuildPython)
     }
 }
 
 if (-not (Test-PythonExecutable -Executable $VenvPython)) {
-    throw "Virtual environment Python is invalid: $VenvPython"
+    throw ('Virtual environment Python is invalid: {0}' -f $VenvPython)
 }
 
 & $VenvPython -m pip install --upgrade pip setuptools wheel
@@ -215,7 +215,7 @@ if ($LASTEXITCODE -ne 0) {
 
 $MakensisCandidates = @(
     (Get-Command makensis.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue),
-    "$env:ProgramFiles(x86)\NSIS\makensis.exe",
+    "${env:ProgramFiles(x86)}\NSIS\makensis.exe",
     "$env:ProgramFiles\NSIS\makensis.exe"
 ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
 
@@ -242,7 +242,7 @@ finally {
 
 $Installer = Join-Path $ProjectRoot 'dist\ReNamer_Setup.exe'
 if (-not (Test-Path -LiteralPath $Installer)) {
-    throw "Installer output not found: $Installer"
+    throw ('Installer output not found: {0}' -f $Installer)
 }
 
 Write-Host ''
