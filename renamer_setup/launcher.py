@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
-from typing import IO
+from typing import Any, IO
 
 
 _NULL_STDIN: IO[str] | None = None
+_ORIGINAL_SUBPROCESS_RUN = subprocess.run
 
 
 def _attach_null_stdin_on_windows() -> None:
@@ -46,7 +48,25 @@ def _attach_null_stdin_on_windows() -> None:
     sys.stdin = _NULL_STDIN
 
 
+def _install_subprocess_stdin_guard() -> None:
+    """Prevent child tools from inheriting ReNamer's invalid stdin handle."""
+
+    if os.name != "nt":
+        return
+
+    def run_with_valid_stdin(
+        *popenargs: Any,
+        **kwargs: Any,
+    ) -> subprocess.CompletedProcess[Any]:
+        if "stdin" not in kwargs and "input" not in kwargs:
+            kwargs["stdin"] = subprocess.DEVNULL
+        return _ORIGINAL_SUBPROCESS_RUN(*popenargs, **kwargs)
+
+    subprocess.run = run_with_valid_stdin  # type: ignore[assignment]
+
+
 _attach_null_stdin_on_windows()
+_install_subprocess_stdin_guard()
 
 from renamer_document_classifier.cli import main  # noqa: E402
 
