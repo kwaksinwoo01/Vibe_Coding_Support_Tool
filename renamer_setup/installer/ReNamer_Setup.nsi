@@ -7,7 +7,7 @@ Unicode true
 !include "FileFunc.nsh"
 
 !define PRODUCT_NAME "ReNamer Document Classifier"
-!define PRODUCT_VERSION "7.2.3"
+!define PRODUCT_VERSION "7.2.4"
 !define PRODUCT_PUBLISHER "KWAKSINWOO"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\ReNamerDocumentClassifier.exe"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReNamerDocumentClassifier"
