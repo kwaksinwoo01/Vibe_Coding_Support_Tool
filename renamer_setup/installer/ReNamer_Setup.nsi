@@ -7,7 +7,7 @@ Unicode true
 !include "FileFunc.nsh"
 
 !define PRODUCT_NAME "ReNamer Document Classifier"
-!define PRODUCT_VERSION "7.2.1"
+!define PRODUCT_VERSION "7.2.2"
 !define PRODUCT_PUBLISHER "KWAKSINWOO"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\ReNamerDocumentClassifier.exe"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReNamerDocumentClassifier"
@@ -103,12 +103,12 @@ Section "MainProgram" SEC_MAIN
   ; 유지보수용 내부 사본입니다.
   SetOutPath "$INSTDIR\renamer"
   Delete "$INSTDIR\renamer\renamer_document_classifier_7_2.txt"
-  File "/oname=${RENAMER_SCRIPT_NAME}" "..\renamer\renamer_document_classifier_7_2.txt"
+  File "..\renamer\7.0_자동이름 변경 시스템.pas"
 
   ; 일반 사용자가 ReNamer에서 바로 찾을 수 있도록 기본 Scripts 폴더에 설치합니다.
   CreateDirectory "${RENAMER_SCRIPT_DIR}"
   SetOutPath "${RENAMER_SCRIPT_DIR}"
-  File "/oname=${RENAMER_SCRIPT_NAME}" "..\renamer\renamer_document_classifier_7_2.txt"
+  File "..\renamer\7.0_자동이름 변경 시스템.pas"
 
   SetOutPath "$INSTDIR\support"
   File "..\scripts\install_optional_dependencies.ps1"
