@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import os
 from pathlib import Path
 import subprocess
 import sys
+import traceback
 
 from .config import (
     DEFAULT_KNOWN_NAMES,
+    installation_root,
     load_user_config,
     log_path,
     save_user_config,
@@ -22,6 +25,29 @@ def _configure_streams() -> None:
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure:
             reconfigure(encoding="utf-8", errors="replace")
+
+
+def _write_error_trace(command: str, exc: BaseException) -> Path | None:
+    try:
+        path = installation_root() / "logs" / "classifier_error.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_text("", encoding="utf-8-sig")
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        payload = (
+            "\n[ERROR]\n"
+            f"time={timestamp}\n"
+            f"command={command}\n"
+            f"exception={type(exc).__name__}:{exc}\n"
+            f"traceback=\n{traceback.format_exc()}"
+            "[/ERROR]\n"
+        )
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(payload)
+        return path
+    except OSError:
+        return None
 
 
 def _split_names(value: str) -> list[str]:
@@ -194,8 +220,11 @@ def main(argv: list[str] | None = None) -> int:
                 limits=limits,
             )
         except Exception as exc:  # noqa: BLE001 - stable CLI boundary
+            trace_path = _write_error_trace("inspect", exc)
             print("STATUS=ERROR")
             print(f"ERROR={type(exc).__name__}:{exc}")
+            if trace_path is not None:
+                print(f"TRACE_LOG={trace_path}")
             return 1
 
         classification = result.classification
