@@ -1,4 +1,4 @@
-﻿// 7.0 자동이름 변경 시스템
+﻿// 7.3 자동이름 변경 시스템
 // ReNamer PascalScript
 // 설치된 문서 분류기와 사용자 이름 설정을 사용합니다.
 
@@ -6,15 +6,19 @@ var
   AppRoot: WideString;
   ClassifierExe: WideString;
   NamesPath: WideString;
+  CorrespondentPath: WideString;
   BridgeLogPath: WideString;
   DefaultPersonName: WideString;
   KnownNames: TWideStringArray;
+  KnownCorrespondents: TWideStringArray;
   ConfigLoaded: Boolean;
+  CorrespondentConfigLoaded: Boolean;
   OriginalBaseName: WideString;
   TempOriginalBaseName: WideString;
   FileExtension: WideString;
   DocumentType: WideString;
   PersonName: WideString;
+  CorrespondentName: WideString;
   ExistingDate: WideString;
   ExistingDateToken: WideString;
   TakenDate: WideString;
@@ -349,6 +353,128 @@ begin
 end;
 
 
+function IsSelfCompanyName(
+  const Candidate: WideString
+): Boolean;
+var
+  LowerCandidate: WideString;
+begin
+  LowerCandidate := WideLowerCase(Candidate);
+  Result :=
+    (WidePos('에아스텍', LowerCandidate) > 0) or
+    (WidePos('ersteq', LowerCandidate) > 0);
+end;
+
+
+procedure LoadCorrespondentConfig;
+var
+  Lines: TWideStringArray;
+  SourceIndex, TargetIndex: Integer;
+  Value: WideString;
+begin
+  if CorrespondentConfigLoaded then Exit;
+
+  CorrespondentConfigLoaded := True;
+  SetLength(KnownCorrespondents, 0);
+
+  if not WideFileExists(CorrespondentPath) then
+  begin
+    AppendBridgeLog(
+      'CORRESPONDENT_CONFIG_MISSING path=' + CorrespondentPath
+    );
+    Exit;
+  end;
+
+  Lines := FileReadTextLines(CorrespondentPath);
+  SetLength(KnownCorrespondents, Length(Lines));
+  TargetIndex := 0;
+
+  for SourceIndex := 0 to Length(Lines) - 1 do
+  begin
+    Value := CustomWideTrim(Lines[SourceIndex]);
+    if (
+      Length(Value) > 0
+    ) and (
+      Value[1] <> '#'
+    ) and (
+      not IsSelfCompanyName(Value)
+    ) then
+    begin
+      KnownCorrespondents[TargetIndex] := Value;
+      Inc(TargetIndex);
+    end;
+  end;
+
+  SetLength(KnownCorrespondents, TargetIndex);
+end;
+
+
+function CanonicalCorrespondentName(
+  const CandidateName: WideString
+): WideString;
+var
+  Position: Integer;
+begin
+  Result := '';
+  if IsSelfCompanyName(CandidateName) then Exit;
+
+  LoadCorrespondentConfig;
+  if Length(KnownCorrespondents) = 0 then Exit;
+
+  for Position := 0 to Length(KnownCorrespondents) - 1 do
+  begin
+    if WideLowerCase(KnownCorrespondents[Position]) =
+      WideLowerCase(CandidateName) then
+    begin
+      Result := KnownCorrespondents[Position];
+      Exit;
+    end;
+  end;
+end;
+
+
+function DetectCorrespondentName(
+  const SourceText: WideString
+): WideString;
+var
+  Position: Integer;
+  Candidate: WideString;
+begin
+  Result := '';
+  LoadCorrespondentConfig;
+  if Length(KnownCorrespondents) = 0 then Exit;
+
+  for Position := 0 to Length(KnownCorrespondents) - 1 do
+  begin
+    Candidate := KnownCorrespondents[Position];
+    if WidePos(
+      WideLowerCase(Candidate),
+      WideLowerCase(SourceText)
+    ) > 0 then
+    begin
+      Result := Candidate;
+      Exit;
+    end;
+  end;
+end;
+
+
+function RemoveSelfCompanyNames(
+  const SourceText: WideString
+): WideString;
+begin
+  Result := SourceText;
+  Result := WideReplaceStr(Result, '주식회사 에아스텍', '');
+  Result := WideReplaceStr(Result, '(주)에아스텍', '');
+  Result := WideReplaceStr(Result, '㈜에아스텍', '');
+  Result := WideReplaceStr(Result, 'ERSTEQ Co., Ltd.', '');
+  Result := WideReplaceStr(Result, 'Ersteq Co., Ltd.', '');
+  Result := WideReplaceStr(Result, '에아스텍', '');
+  Result := WideReplaceStr(Result, 'ERSTEQ', '');
+  Result := WideReplaceStr(Result, 'ersteq', '');
+end;
+
+
 function IsImageExtension(
   const Extension: WideString
 ): Boolean;
@@ -493,7 +619,8 @@ end;
 function ClassifyDocument(
   const SourcePath: WideString;
   const OriginalFileName: WideString;
-  const Extension: WideString
+  const Extension: WideString;
+  var DetectedCorrespondent: WideString
 ): WideString;
 var
   LowerOriginalName: WideString;
@@ -508,6 +635,7 @@ var
   ExitCode: Cardinal;
 begin
   Result := 'NA';
+  DetectedCorrespondent := '';
   LowerOriginalName := WideLowerCase(OriginalFileName);
 
   if WidePos('견적', LowerOriginalName) > 0 then
@@ -516,7 +644,6 @@ begin
       'CLASSIFY_FILENAME kind=QUOTE file=' + OriginalFileName
     );
     Result := '00.견적서';
-    Exit;
   end;
 
   if (
@@ -529,7 +656,6 @@ begin
       'CLASSIFY_FILENAME kind=TRANSACTION file=' + OriginalFileName
     );
     Result := '01.거래명세서';
-    Exit;
   end;
 
   if not WideFileExists(ClassifierExe) then
@@ -592,6 +718,9 @@ begin
   if Length(ConsoleOutput) = 0 then Exit;
 
   OutputText := UTF8Decode(ConsoleOutput);
+  DetectedCorrespondent := CanonicalCorrespondentName(
+    ReadOutputValue(OutputText, 'CORRESPONDENT')
+  );
   KindValue := WideUpperCase(
     ReadOutputValue(OutputText, 'KIND')
   );
@@ -619,6 +748,9 @@ begin
   NamesPath :=
     AppRoot + 'config\names.txt';
 
+  CorrespondentPath :=
+    AppRoot + 'config\correspondent.txt';
+
   BridgeLogPath :=
     AppRoot + 'logs\pascal_bridge.log';
 
@@ -642,13 +774,16 @@ begin
       Exit;
 
     DocumentType := '03.물품사진';
+    CorrespondentName := DetectCorrespondentName(OriginalBaseName);
   end
   else if IsDocumentExtension(FileExtension) then
   begin
+    CorrespondentName := '';
     DocumentType := ClassifyDocument(
       FilePath,
       FileName,
-      FileExtension
+      FileExtension,
+      CorrespondentName
     );
 
     if DocumentType = 'NA' then
@@ -670,6 +805,9 @@ begin
   end;
 
   PersonName := DetectPersonName(OriginalBaseName);
+  if Length(CorrespondentName) = 0 then
+    CorrespondentName := DetectCorrespondentName(OriginalBaseName);
+
   TempOriginalBaseName := OriginalBaseName;
 
   if Length(PersonName) > 0 then
@@ -680,6 +818,18 @@ begin
       ''
     );
   end;
+
+  if Length(CorrespondentName) > 0 then
+  begin
+    TempOriginalBaseName := WideReplaceStr(
+      TempOriginalBaseName,
+      CorrespondentName,
+      ''
+    );
+  end;
+
+  TempOriginalBaseName :=
+    RemoveSelfCompanyNames(TempOriginalBaseName);
 
   ExistingDateToken := '';
   ExistingDate := ExtractExistingDateToYYMMDD(
@@ -726,6 +876,9 @@ begin
     DocumentType + '_' +
     TakenDate + '_' +
     PersonName;
+
+  if Length(CorrespondentName) > 0 then
+    FileName := FileName + '_' + CorrespondentName;
 
   if Length(TempOriginalBaseName) > 0 then
     FileName :=

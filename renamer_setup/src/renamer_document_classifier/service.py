@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .classification import ClassificationResult, DocumentKind, classify_document_text
-from .config import resolve_person_name
+from .correspondent_config import load_correspondents, resolve_correspondent
 from .extractors import (
     ExtractionLimits,
     ExtractionResult,
@@ -15,6 +15,7 @@ from .extractors import (
     ocr_pdf,
 )
 from .logging_utils import append_log
+from .names_config import resolve_person_name
 
 
 PDF_OCR_ATTEMPTS: tuple[dict[str, int | bool], ...] = (
@@ -31,6 +32,7 @@ class InspectionResult:
     classification: ClassificationResult
     extraction: ExtractionResult
     person_name: str
+    correspondent_name: str
     source_path: Path
 
 
@@ -42,10 +44,17 @@ def _extract_pdf_ocr_adaptively(
     path: Path,
     extraction: ExtractionResult,
     limits: ExtractionLimits,
-) -> ClassificationResult:
+    *,
+    original_name: str,
+    correspondents: tuple[str, ...],
+) -> tuple[ClassificationResult, str]:
     classification = _classify(extraction.text)
+    correspondent = resolve_correspondent(
+        (original_name, extraction.text),
+        correspondents,
+    )
 
-    for attempt_options in PDF_OCR_ATTEMPTS:
+    for attempt_index, attempt_options in enumerate(PDF_OCR_ATTEMPTS):
         attempt = ocr_pdf(path, limits, **attempt_options)
         extraction.extend(attempt)
 
@@ -54,13 +63,21 @@ def _extract_pdf_ocr_adaptively(
         # earlier OCR text and still be missed.
         attempt_classification = _classify(attempt.text)
         if attempt_classification.kind is not DocumentKind.UNKNOWN:
-            return attempt_classification
+            classification = attempt_classification
+        else:
+            classification = _classify(extraction.text)
 
-        classification = _classify(extraction.text)
-        if classification.kind is not DocumentKind.UNKNOWN:
-            return classification
+        correspondent = resolve_correspondent(
+            (original_name, extraction.text),
+            correspondents,
+        )
+        if (
+            classification.kind is not DocumentKind.UNKNOWN
+            and (correspondent or not correspondents or attempt_index >= 2)
+        ):
+            return classification, correspondent
 
-    return classification
+    return classification, correspondent
 
 
 def inspect_document(
@@ -71,26 +88,39 @@ def inspect_document(
 ) -> InspectionResult:
     path = Path(source_path).expanduser().resolve()
     active_limits = limits or ExtractionLimits()
+    active_original_name = original_name or path.name
+    correspondents = load_correspondents()
     extraction = extract_primary_text(path, active_limits)
     classification = _classify(extraction.text)
+    correspondent_name = resolve_correspondent(
+        (active_original_name, extraction.text),
+        correspondents,
+    )
 
     extension = path.suffix.casefold()
     if classification.kind is DocumentKind.UNKNOWN:
         if extension in PDF_EXTENSIONS:
-            classification = _extract_pdf_ocr_adaptively(
+            classification, correspondent_name = _extract_pdf_ocr_adaptively(
                 path,
                 extraction,
                 active_limits,
+                original_name=active_original_name,
+                correspondents=correspondents,
             )
         elif extension in SPREADSHEET_EXTENSIONS:
             extraction.extend(extract_spreadsheet_fallback(path, active_limits))
             classification = _classify(extraction.text)
+            correspondent_name = resolve_correspondent(
+                (active_original_name, extraction.text),
+                correspondents,
+            )
 
-    person_name = resolve_person_name(original_name or path.name)
+    person_name = resolve_person_name(active_original_name)
     result = InspectionResult(
         classification=classification,
         extraction=extraction,
         person_name=person_name,
+        correspondent_name=correspondent_name,
         source_path=path,
     )
 
@@ -123,6 +153,7 @@ def write_inspection_log(result: InspectionResult) -> None:
             f"matches={' | '.join(classification.matches) or 'none'}",
             f"reason={classification.reason}",
             f"person={result.person_name}",
+            f"correspondent={result.correspondent_name or 'none'}",
             f"result={classification.kind.value}",
             f"warnings={' | '.join(extraction.warnings) or 'none'}",
         ]

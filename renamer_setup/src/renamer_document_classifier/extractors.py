@@ -11,7 +11,7 @@ from xml.etree import ElementTree
 
 from python_calamine import CalamineWorkbook
 
-from .config import installation_root, tools_directory
+from .runtime_paths import installation_root, tools_directory
 
 
 SPREADSHEET_EXTENSIONS = {".xls", ".xlsx", ".xlsm", ".xlsb", ".ods"}

@@ -4,10 +4,9 @@ from configparser import ConfigParser
 from dataclasses import dataclass
 from pathlib import Path
 import os
-import sys
 
+from .runtime_paths import config_directory, decode_text_file
 
-APP_DIRECTORY_NAME = "ReNamerDocumentClassifier"
 DEFAULT_KNOWN_NAMES = (
     "곽신우",
     "김민규",
@@ -24,61 +23,12 @@ class UserConfig:
     known_names: tuple[str, ...]
 
 
-def installation_root() -> Path:
-    override = os.environ.get("RENAMER_CLASSIFIER_ROOT")
-    if override:
-        return Path(override).expanduser().resolve()
-
-    if getattr(sys, "frozen", False):
-        executable_dir = Path(sys.executable).resolve().parent
-        if executable_dir.name.casefold() == "classifier":
-            return executable_dir.parent
-        return executable_dir
-
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if local_app_data:
-        return Path(local_app_data) / APP_DIRECTORY_NAME
-    return Path.home() / "AppData" / "Local" / APP_DIRECTORY_NAME
-
-
-def config_directory() -> Path:
-    return installation_root() / "config"
-
-
 def config_path() -> Path:
     return config_directory() / "user.ini"
 
 
 def names_path() -> Path:
     return config_directory() / "names.txt"
-
-
-def log_path() -> Path:
-    return installation_root() / "logs" / "classification.log"
-
-
-def tools_directory() -> Path:
-    return installation_root() / "tools"
-
-
-def configure_runtime_environment() -> None:
-    tessdata = tools_directory() / "tessdata"
-    if tessdata.is_dir():
-        os.environ["TESSDATA_PREFIX"] = str(tessdata)
-
-
-def _decode_config(raw: bytes) -> str:
-    if raw.startswith(b"\xef\xbb\xbf"):
-        return raw.decode("utf-8-sig")
-    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
-        return raw.decode("utf-16")
-
-    for encoding in ("utf-8", "cp949", "mbcs"):
-        try:
-            return raw.decode(encoding)
-        except (UnicodeDecodeError, LookupError):
-            continue
-    return raw.decode("utf-8", errors="replace")
 
 
 def normalize_names(default_name: str, values: list[str] | tuple[str, ...]) -> tuple[str, ...]:
@@ -106,7 +56,7 @@ def load_user_config() -> UserConfig:
 
     parser = ConfigParser(interpolation=None)
     parser.optionxform = str
-    parser.read_string(_decode_config(path.read_bytes()))
+    parser.read_string(decode_text_file(path))
 
     default_name = parser.get("User", "DefaultName", fallback="").strip()
     if not default_name:
@@ -159,6 +109,3 @@ def resolve_person_name(file_name: str, config: UserConfig | None = None) -> str
         if name.casefold() in folded:
             return name
     return active.default_name
-
-
-configure_runtime_environment()

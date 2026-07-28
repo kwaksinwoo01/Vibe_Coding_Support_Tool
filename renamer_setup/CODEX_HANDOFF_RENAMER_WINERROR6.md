@@ -83,6 +83,46 @@ classified, preventing a title found by a later mode from being pushed beyond
 the 2,000-character title scan boundary. Existing PDFs still stop after PSM 6;
 only the problem scan advanced to PSM 3. Tests passed (`13 passed`).
 
+## Version 7.3 correspondent support verified on 2026-07-28
+
+Version 7.3 adds a registered-correspondent segment after the person name:
+
+```text
+document_type_date_person_correspondent_original_name.extension
+```
+
+Private correspondent keywords are not packaged. The installer creates and
+preserves an external UTF-8 BOM file only when it is missing:
+
+```text
+%LOCALAPPDATA%\ReNamerDocumentClassifier\config\correspondent.txt
+```
+
+Only entries from this file can be emitted. `에아스텍` and `ERSTEQ` are always
+excluded as self-company names. The former `config.py` responsibilities are
+split into `names_config.py`, `correspondent_config.py`, and shared
+`runtime_paths.py`.
+
+The 7.3 script compiled successfully inside the actual ReNamer rule editor.
+Runtime previews verified both document-text and image-filename matching:
+
+```text
+01.거래명세서_260716_곽신우_<registered-pdf-vendor>_SAuthor20371.pdf
+03.물품사진_260724_곽신우_<registered-image-vendor>_Container....jpg
+```
+
+With only the self-company name registered, the installed classifier returned
+an empty `CORRESPONDENT=` and ReNamer omitted the segment. A silent upgrade
+also preserved a sentinel correspondent file byte-for-byte. Tests passed
+(`19 passed`), PyInstaller and NSIS succeeded, and final hashes matched:
+
+```text
+build classifier.exe:       9720A2657583396A420838723595167E29657CCCC6385422274C86BF56095CBA
+installed classifier.exe:   9720A2657583396A420838723595167E29657CCCC6385422274C86BF56095CBA
+repository 7.3 script:       5290D141549F2F50531F8C37357D8F00FF814601E0A5531AB094146AA86CEB9C
+installed 7.3 script:        5290D141549F2F50531F8C37357D8F00FF814601E0A5531AB094146AA86CEB9C
+```
+
 ## Repository and scope
 
 - Repository: `kwaksinwoo01/Vibe_Coding_Support_Tool`
@@ -90,7 +130,7 @@ only the problem scan advanced to PSM 3. Tests passed (`13 passed`).
 - Project scope: `renamer_setup/`
 - Local build: Python 3.13.x, PyInstaller, NSIS
 - Installed root: `%LOCALAPPDATA%\ReNamerDocumentClassifier`
-- ReNamer script: `%USERPROFILE%\Documents\den4b\ReNamer\Scripts\7.0_자동이름 변경 시스템.pas`
+- ReNamer script: `%USERPROFILE%\Documents\den4b\ReNamer\Scripts\7.3_자동이름 변경 시스템.pas`
 
 ## Confirmed working behavior
 
@@ -152,7 +192,7 @@ renamer_setup/src/renamer_document_classifier/cli.py
 renamer_setup/src/renamer_document_classifier/service.py
 renamer_setup/src/renamer_document_classifier/extractors.py
 renamer_setup/src/renamer_document_classifier/logging_utils.py
-renamer_setup/renamer/7.0_자동이름 변경 시스템.pas
+renamer_setup/renamer/7.3_자동이름 변경 시스템.pas
 renamer_setup/installer/ReNamer_Setup.nsi
 renamer_setup/scripts/build.ps1
 renamer_setup/classifier.spec

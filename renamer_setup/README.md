@@ -8,13 +8,13 @@
 2. 설치 화면에서 **기본 사용자 이름** 입력
 3. 필요한 경우 추가 인식 이름을 쉼표로 입력
 4. 설치 완료 후 ReNamer에서 `PascalScript` 규칙 추가
-5. `Scripts` 메뉴에서 **`7.0_자동이름 변경 시스템.pas`** 선택
+5. `Scripts` 메뉴에서 **`7.3_자동이름 변경 시스템.pas`** 선택
 6. 이후 PDF/Excel/ODS 파일을 ReNamer에 넣어 사용
 
 설치기는 다음 ReNamer 기본 스크립트 폴더를 자동으로 생성하고 PascalScript를 직접 배치합니다.
 
 ```text
-%UserProfile%\Documents\den4b\ReNamer\Scripts\7.0_자동이름 변경 시스템.pas
+%UserProfile%\Documents\den4b\ReNamer\Scripts\7.3_자동이름 변경 시스템.pas
 ```
 
 사용자는 숨김 폴더인 `AppData`를 찾거나 `.txt` 확장자를 `.pas`로 변경할 필요가 없습니다.
@@ -26,6 +26,8 @@
 - NSIS 설치기는 `%LOCALAPPDATA%\ReNamerDocumentClassifier`에 분류 엔진을 설치합니다.
 - ReNamer PascalScript는 `%UserProfile%\Documents\den4b\ReNamer\Scripts`에 자동 설치합니다.
 - 설치기 사용자 입력은 `config\user.ini`와 `config\names.txt`에 저장합니다.
+- 거래처 키워드는 외부 파일 `config\correspondent.txt`에서만 관리하며 설치 파일에는 포함하지 않습니다.
+- `에아스텍`과 `ERSTEQ`은 본인 회사 키워드이므로 거래처로 출력하지 않습니다.
 - ReNamer PascalScript는 고정 `NameList`를 사용하지 않고 설치기가 생성한 설정을 읽습니다.
 - PDF 및 Excel/ODS 본문은 `classifier.exe`가 분석합니다.
 - 판정 결과는 `QUOTE`, `TRANSACTION`, `UNKNOWN`, `ERROR` 중 하나만 표준 출력으로 반환합니다.
@@ -56,13 +58,15 @@ renamer_setup/
 ├─ src/renamer_document_classifier/
 │  ├─ __init__.py
 │  ├─ classification.py
-│  ├─ config.py
+│  ├─ runtime_paths.py
+│  ├─ names_config.py
+│  ├─ correspondent_config.py
 │  ├─ extractors.py
 │  ├─ logging_utils.py
 │  ├─ service.py
 │  └─ cli.py
 ├─ renamer/
-│  └─ renamer_document_classifier_7_2.txt
+│  └─ 7.3_자동이름 변경 시스템.pas
 ├─ installer/
 │  └─ ReNamer_Setup.nsi
 ├─ scripts/
@@ -71,13 +75,14 @@ renamer_setup/
 │  └─ verify_text_encoding.ps1
 └─ tests/
    ├─ test_classification.py
-   └─ test_config.py
+   ├─ test_names_config.py
+   └─ test_correspondent_config.py
 ```
 
-저장소의 `renamer_document_classifier_7_2.txt`는 빌드용 원본입니다. 설치 파일 안에서는 다음 사용자용 이름으로 출력됩니다.
+저장소와 설치 파일은 다음 7.3 스크립트 이름을 동일하게 사용합니다.
 
 ```text
-7.0_자동이름 변경 시스템.pas
+7.3_자동이름 변경 시스템.pas
 ```
 
 ## 반드시 지켜야 하는 문자 인코딩
@@ -89,7 +94,7 @@ installer/ReNamer_Setup.nsi
 scripts/build.ps1
 scripts/install_optional_dependencies.ps1
 scripts/verify_text_encoding.ps1
-renamer/renamer_document_classifier_7_2.txt
+renamer/7.3_자동이름 변경 시스템.pas
 ```
 
 `ReNamer_Setup.nsi`에는 다음 두 설정이 함께 적용되어 있습니다.
@@ -169,11 +174,11 @@ dist\ReNamer_Setup.exe
 1. ReNamer 실행
 2. 규칙 목록에서 `PascalScript` 추가
 3. PascalScript 편집기의 `Scripts` 메뉴 열기
-4. `7.0_자동이름 변경 시스템.pas` 선택
+4. `7.3_자동이름 변경 시스템.pas` 선택
 5. 컴파일 확인 후 규칙 추가
 6. 현재 규칙을 ReNamer Preset으로 저장
 
-설치기는 시작 메뉴와 바탕 화면에도 `7.0 자동이름 변경 시스템` 바로가기를 생성합니다.
+설치기는 시작 메뉴와 바탕 화면에도 `7.3 자동이름 변경 시스템` 바로가기를 생성합니다.
 
 ## 한글이 깨질 때 확인할 항목
 
@@ -182,6 +187,22 @@ dist\ReNamer_Setup.exe
 3. NSIS 3.x를 사용하고 있는지 확인합니다.
 4. `build.ps1`을 통하지 않고 NSIS GUI에서 직접 컴파일했다면 입력 문자셋이 UTF-8인지 확인합니다.
 5. 이전에 생성한 `dist\ReNamer_Setup.exe`를 삭제한 뒤 다시 빌드합니다.
+
+## 거래처 목록 관리
+
+7.3은 문서 본문 또는 기존 파일명에서 등록된 거래처 키워드를 찾고 사용자 이름 바로 뒤에 배치합니다.
+
+```text
+문서종류_날짜_사용자_거래처_원본명.확장자
+```
+
+거래처 목록은 설치 파일에 포함되지 않는 다음 외부 파일에서만 관리합니다.
+
+```text
+%LOCALAPPDATA%\ReNamerDocumentClassifier\config\correspondent.txt
+```
+
+파일은 설치기가 UTF-8 BOM 형식으로 생성합니다. 이 파일을 그대로 열어 한 줄에 한 업체 키워드를 입력합니다. 빈 줄과 `#`으로 시작하는 주석은 무시하며, 등록되지 않은 업체는 파일명에 추가하지 않습니다. `에아스텍`과 `ERSTEQ`은 본인 회사 키워드로 항상 제외됩니다. 설치 후 시작 메뉴의 **거래처 목록 편집**으로 파일을 열 수 있습니다. 업그레이드와 제거 작업은 이 개인정보성 설정 파일을 덮어쓰거나 삭제하지 않습니다.
 
 ## 사용자 이름 변경
 
@@ -202,15 +223,16 @@ ReNamer Document Classifier > 사용자 설정 변경
 ├─ classifier\
 ├─ config\user.ini
 ├─ config\names.txt
+├─ config\correspondent.txt
 ├─ logs\classification.log
-├─ renamer\7.0_자동이름 변경 시스템.pas
+├─ renamer\7.3_자동이름 변경 시스템.pas
 └─ tools\
 ```
 
 ReNamer에서 사용자가 선택하는 스크립트:
 
 ```text
-%UserProfile%\Documents\den4b\ReNamer\Scripts\7.0_자동이름 변경 시스템.pas
+%UserProfile%\Documents\den4b\ReNamer\Scripts\7.3_자동이름 변경 시스템.pas
 ```
 
 제거 프로그램은 ReNamer Scripts 폴더에 설치한 해당 `.pas` 파일도 함께 삭제합니다.

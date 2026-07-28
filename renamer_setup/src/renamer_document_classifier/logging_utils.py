@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
-from .config import log_path
+from .runtime_paths import log_path
 
 
 MAX_LOG_BYTES = 5 * 1024 * 1024

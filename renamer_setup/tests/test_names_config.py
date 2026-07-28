@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from renamer_document_classifier.config import (
+from renamer_document_classifier.names_config import (
     load_user_config,
     names_path,
     resolve_person_name,

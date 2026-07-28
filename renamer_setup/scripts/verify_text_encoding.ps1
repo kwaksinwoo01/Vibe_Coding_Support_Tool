@@ -8,7 +8,7 @@ $RequiredBomFiles = @(
     'scripts\build.ps1',
     'scripts\install_optional_dependencies.ps1',
     'scripts\verify_text_encoding.ps1',
-    'renamer\7.0_자동이름 변경 시스템.pas'
+    'renamer\7.3_자동이름 변경 시스템.pas'
 )
 
 $Failed = $false

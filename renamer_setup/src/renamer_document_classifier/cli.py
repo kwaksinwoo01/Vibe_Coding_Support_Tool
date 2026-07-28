@@ -8,15 +8,18 @@ import subprocess
 import sys
 import traceback
 
-from .config import (
+from .correspondent_config import (
+    correspondent_path,
+    ensure_correspondent_file,
+)
+from .names_config import (
     DEFAULT_KNOWN_NAMES,
-    installation_root,
     load_user_config,
-    log_path,
     save_user_config,
 )
 from .extractors import ExtractionLimits, health_report
 from .logging_utils import clear_log
+from .runtime_paths import installation_root, log_path
 from .service import inspect_document
 
 
@@ -57,6 +60,7 @@ def _split_names(value: str) -> list[str]:
 
 def _configure_non_interactive(default_name: str, known_names: str) -> int:
     config = save_user_config(default_name, _split_names(known_names))
+    ensure_correspondent_file()
     print("STATUS=OK")
     print(f"DEFAULT_NAME={config.default_name}")
     print(f"KNOWN_NAMES={','.join(config.known_names)}")
@@ -68,6 +72,7 @@ def _configure_gui() -> int:
     from tkinter import messagebox, ttk
 
     current = load_user_config()
+    ensure_correspondent_file()
     root = tk.Tk()
     root.title("ReNamer 문서 분류기 사용자 설정")
     root.resizable(False, False)
@@ -168,6 +173,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("open-log", help="classification.log를 엽니다.")
     subparsers.add_parser("clear-log", help="classification.log를 초기화합니다.")
     subparsers.add_parser("health", help="외부 도구 상태를 확인합니다.")
+    subparsers.add_parser(
+        "open-correspondents",
+        help="correspondent.txt 거래처 목록을 엽니다.",
+    )
     return parser
 
 
@@ -182,6 +191,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "open-log":
         _open_path(log_path())
+        return 0
+
+    if args.command == "open-correspondents":
+        _open_path(correspondent_path())
         return 0
 
     if args.command == "clear-log":
@@ -232,6 +245,7 @@ def main(argv: list[str] | None = None) -> int:
         print("STATUS=OK")
         print(f"KIND={classification.kind.value}")
         print(f"PERSON={result.person_name}")
+        print(f"CORRESPONDENT={result.correspondent_name}")
         print(f"QUOTE_SCORE={classification.quote_score}")
         print(f"TRANSACTION_SCORE={classification.transaction_score}")
         print(f"REASON={classification.reason}")
