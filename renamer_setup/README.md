@@ -26,7 +26,7 @@
 - NSIS 설치기는 `%LOCALAPPDATA%\ReNamerDocumentClassifier`에 분류 엔진을 설치합니다.
 - ReNamer PascalScript는 `%UserProfile%\Documents\den4b\ReNamer\Scripts`에 자동 설치합니다.
 - 설치기 사용자 입력은 `config\user.ini`와 `config\names.txt`에 저장합니다.
-- 거래처 키워드는 외부 파일 `config\correspondent.txt`에서만 관리하며 설치 파일에는 포함하지 않습니다.
+- 거래처 키워드는 외부 파일 `config\correspondent.txt`에서 관리합니다. 배포자가 비공개 빌드 입력을 지정한 경우 신규 설치에만 기본 목록을 포함하고 업그레이드에서는 기존 파일을 보존합니다.
 - `에아스텍`과 `ERSTEQ`은 본인 회사 키워드이므로 거래처로 출력하지 않습니다.
 - ReNamer PascalScript는 고정 `NameList`를 사용하지 않고 설치기가 생성한 설정을 읽습니다.
 - PDF 및 Excel/ODS 본문은 `classifier.exe`가 분석합니다.
@@ -154,6 +154,23 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -PythonPath "C:\Users\user\AppData\Local\Programs\Python\Python313\python.exe"
 ```
 
+거래처 기본 목록을 포함할 배포 빌드는 Git에서 제외되는 다음 파일을 UTF-8 BOM으로 작성합니다.
+
+```text
+private\correspondent.txt
+```
+
+한 줄에 한 업체 키워드를 입력한 뒤 기존 빌드 명령을 실행하면 자동으로 포함됩니다. 다른 위치의 비공개 파일을 사용할 때는 다음처럼 명시합니다.
+
+```powershell
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\build.ps1 `
+  -PythonPath "C:\Users\user\AppData\Local\Programs\Python\Python313\python.exe" `
+  -CorrespondentFile "C:\private\correspondent.txt"
+```
+
+입력 파일이 없으면 기존처럼 빈 거래처 목록으로 설치되는 일반 배포 빌드가 생성됩니다. 빌드 로그에는 업체명 대신 유효 항목 수만 표시됩니다. 실제 거래처 목록은 `.gitignore`로 제외되지만 완성된 설치 파일에서는 추출할 수 있으므로 비밀 저장소로 간주할 수 없습니다.
+
 테스트를 생략해야 하는 임시 개발 빌드만 다음 옵션을 사용합니다.
 
 ```powershell
@@ -196,13 +213,22 @@ dist\ReNamer_Setup.exe
 문서종류_날짜_사용자_거래처_원본명.확장자
 ```
 
-거래처 목록은 설치 파일에 포함되지 않는 다음 외부 파일에서만 관리합니다.
+설치된 거래처 목록은 다음 외부 파일에서 관리합니다.
 
 ```text
 %LOCALAPPDATA%\ReNamerDocumentClassifier\config\correspondent.txt
 ```
 
-파일은 설치기가 UTF-8 BOM 형식으로 생성합니다. 이 파일을 그대로 열어 한 줄에 한 업체 키워드를 입력합니다. 빈 줄과 `#`으로 시작하는 주석은 무시하며, 등록되지 않은 업체는 파일명에 추가하지 않습니다. `에아스텍`과 `ERSTEQ`은 본인 회사 키워드로 항상 제외됩니다. 설치 후 시작 메뉴의 **거래처 목록 편집**으로 파일을 열 수 있습니다. 업그레이드와 제거 작업은 이 개인정보성 설정 파일을 덮어쓰거나 삭제하지 않습니다.
+비공개 기본 목록을 포함한 설치기는 이 파일이 없는 신규 설치에만 내장 목록을 복사합니다. 파일이 이미 있는 업그레이드에서는 내용이 비어 있더라도 기존 파일을 덮어쓰지 않습니다. 내장 목록이 없는 일반 빌드는 파일이 없을 때 UTF-8 BOM 형식의 빈 파일을 생성합니다. 한 줄에 한 업체 키워드를 입력하며, 빈 줄과 `#`으로 시작하는 주석은 무시합니다.
+
+검색 키워드와 파일명에 표시할 브랜드가 다르면 다음 별칭 형식을 사용합니다.
+
+```text
+검색 키워드 | 대체 검색 키워드 => 출력 브랜드명
+써모피서사이언티픽 | 모피셔사이언티픽 | thermofisher.com => ThermoFisher Scientific
+```
+
+왼쪽 키워드 중 하나가 문서에 있으면 오른쪽 브랜드명을 `CORRESPONDENT`와 파일명에 사용합니다. `| 대체 검색 키워드`는 필요할 때만 추가합니다. 등록되지 않은 업체는 파일명에 추가하지 않고 `에아스텍`과 `ERSTEQ`은 본인 회사 키워드로 항상 제외합니다. 설치 후 시작 메뉴의 **거래처 목록 편집**으로 파일을 열 수 있으며 제거 작업도 이 개인정보성 설정 파일을 삭제하지 않습니다.
 
 ## 사용자 이름 변경
 

@@ -4,7 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .classification import ClassificationResult, DocumentKind, classify_document_text
-from .correspondent_config import load_correspondents, resolve_correspondent
+from .correspondent_config import (
+    CorrespondentRule,
+    load_correspondents,
+    resolve_correspondent,
+)
 from .extractors import (
     ExtractionLimits,
     ExtractionResult,
@@ -46,7 +50,7 @@ def _extract_pdf_ocr_adaptively(
     limits: ExtractionLimits,
     *,
     original_name: str,
-    correspondents: tuple[str, ...],
+    correspondents: tuple[CorrespondentRule, ...],
 ) -> tuple[ClassificationResult, str]:
     classification = _classify(extraction.text)
     correspondent = resolve_correspondent(
@@ -98,16 +102,23 @@ def inspect_document(
     )
 
     extension = path.suffix.casefold()
-    if classification.kind is DocumentKind.UNKNOWN:
-        if extension in PDF_EXTENSIONS:
-            classification, correspondent_name = _extract_pdf_ocr_adaptively(
-                path,
-                extraction,
-                active_limits,
-                original_name=active_original_name,
-                correspondents=correspondents,
-            )
-        elif extension in SPREADSHEET_EXTENSIONS:
+    needs_pdf_ocr = (
+        extension in PDF_EXTENSIONS
+        and (
+            classification.kind is DocumentKind.UNKNOWN
+            or (correspondents and not correspondent_name)
+        )
+    )
+    if needs_pdf_ocr:
+        classification, correspondent_name = _extract_pdf_ocr_adaptively(
+            path,
+            extraction,
+            active_limits,
+            original_name=active_original_name,
+            correspondents=correspondents,
+        )
+    elif classification.kind is DocumentKind.UNKNOWN:
+        if extension in SPREADSHEET_EXTENSIONS:
             extraction.extend(extract_spreadsheet_fallback(path, active_limits))
             classification = _classify(extraction.text)
             correspondent_name = resolve_correspondent(

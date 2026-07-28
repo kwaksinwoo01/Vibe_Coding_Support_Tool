@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from renamer_document_classifier.correspondent_config import (
+    CorrespondentRule,
     correspondent_path,
     ensure_correspondent_file,
     load_correspondents,
@@ -37,11 +38,14 @@ def test_correspondents_ignore_comments_duplicates_and_self_company() -> None:
             "ERSTEQ Co., Ltd.",
             "",
         ]
-    ) == ("등록거래처A", "등록거래처B")
+    ) == (
+        CorrespondentRule("등록거래처A", ("등록거래처A",)),
+        CorrespondentRule("등록거래처B", ("등록거래처B",)),
+    )
 
 
 def test_only_registered_correspondent_is_resolved() -> None:
-    registered = ("등록거래처A", "PARTNER_ALPHA")
+    registered = normalize_correspondents(("등록거래처A", "PARTNER_ALPHA"))
 
     assert resolve_correspondent(
         "공급자 주식회사 에아스텍 공급받는자 등록거래처A",
@@ -52,7 +56,7 @@ def test_only_registered_correspondent_is_resolved() -> None:
 
 
 def test_filename_is_preferred_before_extracted_document_text() -> None:
-    registered = ("PARTNER_ALPHA", "등록거래처A")
+    registered = normalize_correspondents(("PARTNER_ALPHA", "등록거래처A"))
 
     assert resolve_correspondent(
         ("담당자_PARTNER_ALPHA_견적서.pdf", "공급받는자 등록거래처A"),
@@ -68,4 +72,31 @@ def test_correspondents_are_loaded_from_utf8_bom_file(
     path = ensure_correspondent_file()
     path.write_text("# private entries\n등록거래처A\n에아스텍\n", encoding="utf-8-sig")
 
-    assert load_correspondents() == ("등록거래처A",)
+    assert load_correspondents() == (
+        CorrespondentRule("등록거래처A", ("등록거래처A",)),
+    )
+
+
+def test_alias_mapping_returns_filename_brand_name() -> None:
+    registered = normalize_correspondents(
+        ("써모피서사이언티픽 => ThermoFisher Scientific",)
+    )
+
+    assert resolve_correspondent(
+        "공급자 써모피서사이언티픽솔루션스 유한회사",
+        registered,
+    ) == "ThermoFisher Scientific"
+
+
+def test_alias_mapping_supports_multiple_search_terms() -> None:
+    registered = normalize_correspondents(
+        (
+            "써모피서사이언티픽 | thermofisher.com "
+            "=> ThermoFisher Scientific",
+        )
+    )
+
+    assert resolve_correspondent(
+        "Http://www.thermofisher.com/support.html",
+        registered,
+    ) == "ThermoFisher Scientific"

@@ -122,8 +122,20 @@ Section "MainProgram" SEC_MAIN
   CreateDirectory "$INSTDIR\logs"
   CreateDirectory "$INSTDIR\temp"
 
-  ; correspondent.txt는 classifier가 없을 때만 빈 파일로 생성합니다.
-  ; 개인정보성 거래처 내용은 설치 파일에 포함하거나 업그레이드 시 덮어쓰지 않습니다.
+  ; 비공개 빌드 입력이 있으면 신규 설치에만 기본 목록을 배치합니다.
+  ; 업그레이드에서는 사용자가 편집한 기존 파일을 바이트 단위로 보존합니다.
+  !ifdef CORRESPONDENT_SOURCE_FILE
+    IfFileExists "$INSTDIR\config\correspondent.txt" CorrespondentPreserved
+    SetOutPath "$INSTDIR\config"
+    File /oname=correspondent.txt "${CORRESPONDENT_SOURCE_FILE}"
+    DetailPrint "내장 거래처 기본 목록을 설치했습니다."
+    Goto CorrespondentReady
+CorrespondentPreserved:
+    DetailPrint "기존 거래처 목록을 보존했습니다."
+CorrespondentReady:
+  !endif
+
+  ; 내장 입력이 없고 파일도 없을 때는 classifier가 빈 UTF-8 BOM 파일을 생성합니다.
   nsExec::ExecToStack '"$INSTDIR\classifier\classifier.exe" configure --default-name "$DefaultName" --known-names "$KnownNames"'
   Pop $0
   Pop $1

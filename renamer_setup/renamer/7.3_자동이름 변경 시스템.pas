@@ -10,7 +10,8 @@ var
   BridgeLogPath: WideString;
   DefaultPersonName: WideString;
   KnownNames: TWideStringArray;
-  KnownCorrespondents: TWideStringArray;
+  KnownCorrespondentTerms: TWideStringArray;
+  KnownCorrespondentDisplayNames: TWideStringArray;
   ConfigLoaded: Boolean;
   CorrespondentConfigLoaded: Boolean;
   OriginalBaseName: WideString;
@@ -369,13 +370,14 @@ end;
 procedure LoadCorrespondentConfig;
 var
   Lines: TWideStringArray;
-  SourceIndex, TargetIndex: Integer;
-  Value: WideString;
+  SourceIndex, TargetIndex, MappingPosition, SeparatorPosition: Integer;
+  Value, TermsText, RemainingTerms, SearchTerm, DisplayName: WideString;
 begin
   if CorrespondentConfigLoaded then Exit;
 
   CorrespondentConfigLoaded := True;
-  SetLength(KnownCorrespondents, 0);
+  SetLength(KnownCorrespondentTerms, 0);
+  SetLength(KnownCorrespondentDisplayNames, 0);
 
   if not WideFileExists(CorrespondentPath) then
   begin
@@ -386,26 +388,65 @@ begin
   end;
 
   Lines := FileReadTextLines(CorrespondentPath);
-  SetLength(KnownCorrespondents, Length(Lines));
   TargetIndex := 0;
 
   for SourceIndex := 0 to Length(Lines) - 1 do
   begin
     Value := CustomWideTrim(Lines[SourceIndex]);
-    if (
-      Length(Value) > 0
-    ) and (
-      Value[1] <> '#'
-    ) and (
-      not IsSelfCompanyName(Value)
-    ) then
+    if (Length(Value) > 0) and (Value[1] <> '#') then
     begin
-      KnownCorrespondents[TargetIndex] := Value;
-      Inc(TargetIndex);
+      MappingPosition := WidePos('=>', Value);
+      if MappingPosition > 0 then
+      begin
+        TermsText := CustomWideTrim(
+          Copy(Value, 1, MappingPosition - 1)
+        );
+        DisplayName := CustomWideTrim(
+          Copy(Value, MappingPosition + 2, Length(Value))
+        );
+      end
+      else
+      begin
+        TermsText := Value;
+        DisplayName := Value;
+      end;
+
+      if (Length(DisplayName) > 0) and
+        (not IsSelfCompanyName(DisplayName)) then
+      begin
+        RemainingTerms := TermsText;
+        repeat
+          SeparatorPosition := WidePos('|', RemainingTerms);
+          if SeparatorPosition > 0 then
+          begin
+            SearchTerm := CustomWideTrim(
+              Copy(RemainingTerms, 1, SeparatorPosition - 1)
+            );
+            RemainingTerms := Copy(
+              RemainingTerms,
+              SeparatorPosition + 1,
+              Length(RemainingTerms)
+            );
+          end
+          else
+          begin
+            SearchTerm := CustomWideTrim(RemainingTerms);
+            RemainingTerms := '';
+          end;
+
+          if (Length(SearchTerm) > 0) and
+            (not IsSelfCompanyName(SearchTerm)) then
+          begin
+            SetLength(KnownCorrespondentTerms, TargetIndex + 1);
+            SetLength(KnownCorrespondentDisplayNames, TargetIndex + 1);
+            KnownCorrespondentTerms[TargetIndex] := SearchTerm;
+            KnownCorrespondentDisplayNames[TargetIndex] := DisplayName;
+            Inc(TargetIndex);
+          end;
+        until Length(RemainingTerms) = 0;
+      end;
     end;
   end;
-
-  SetLength(KnownCorrespondents, TargetIndex);
 end;
 
 
@@ -419,14 +460,14 @@ begin
   if IsSelfCompanyName(CandidateName) then Exit;
 
   LoadCorrespondentConfig;
-  if Length(KnownCorrespondents) = 0 then Exit;
+  if Length(KnownCorrespondentDisplayNames) = 0 then Exit;
 
-  for Position := 0 to Length(KnownCorrespondents) - 1 do
+  for Position := 0 to Length(KnownCorrespondentDisplayNames) - 1 do
   begin
-    if WideLowerCase(KnownCorrespondents[Position]) =
+    if WideLowerCase(KnownCorrespondentDisplayNames[Position]) =
       WideLowerCase(CandidateName) then
     begin
-      Result := KnownCorrespondents[Position];
+      Result := KnownCorrespondentDisplayNames[Position];
       Exit;
     end;
   end;
@@ -442,18 +483,43 @@ var
 begin
   Result := '';
   LoadCorrespondentConfig;
-  if Length(KnownCorrespondents) = 0 then Exit;
+  if Length(KnownCorrespondentTerms) = 0 then Exit;
 
-  for Position := 0 to Length(KnownCorrespondents) - 1 do
+  for Position := 0 to Length(KnownCorrespondentTerms) - 1 do
   begin
-    Candidate := KnownCorrespondents[Position];
+    Candidate := KnownCorrespondentTerms[Position];
     if WidePos(
       WideLowerCase(Candidate),
       WideLowerCase(SourceText)
     ) > 0 then
     begin
-      Result := Candidate;
+      Result := KnownCorrespondentDisplayNames[Position];
       Exit;
+    end;
+  end;
+end;
+
+
+function RemoveCorrespondentTerms(
+  const SourceText: WideString;
+  const DisplayName: WideString
+): WideString;
+var
+  Position: Integer;
+begin
+  Result := WideReplaceStr(SourceText, DisplayName, '');
+  LoadCorrespondentConfig;
+
+  for Position := 0 to Length(KnownCorrespondentTerms) - 1 do
+  begin
+    if WideLowerCase(KnownCorrespondentDisplayNames[Position]) =
+      WideLowerCase(DisplayName) then
+    begin
+      Result := WideReplaceStr(
+        Result,
+        KnownCorrespondentTerms[Position],
+        ''
+      );
     end;
   end;
 end;
@@ -821,10 +887,9 @@ begin
 
   if Length(CorrespondentName) > 0 then
   begin
-    TempOriginalBaseName := WideReplaceStr(
+    TempOriginalBaseName := RemoveCorrespondentTerms(
       TempOriginalBaseName,
-      CorrespondentName,
-      ''
+      CorrespondentName
     );
   end;
 

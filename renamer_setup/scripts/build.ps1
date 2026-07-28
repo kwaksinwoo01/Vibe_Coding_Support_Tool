@@ -1,6 +1,7 @@
 ﻿param(
     [switch]$SkipTests,
-    [string]$PythonPath = ''
+    [string]$PythonPath = '',
+    [string]$CorrespondentFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,6 +9,58 @@ Set-StrictMode -Version Latest
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
+
+function Resolve-CorrespondentInput {
+    $explicitInput = -not [string]::IsNullOrWhiteSpace($CorrespondentFile)
+    if ($explicitInput) {
+        $candidate = [Environment]::ExpandEnvironmentVariables($CorrespondentFile)
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            throw ('The specified CorrespondentFile was not found: {0}' -f $candidate)
+        }
+    }
+    else {
+        $candidate = Join-Path $ProjectRoot 'private\correspondent.txt'
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            Write-Host 'No private correspondent input found; the installer will create an empty list.' -ForegroundColor Yellow
+            return $null
+        }
+    }
+
+    $resolved = (Resolve-Path -LiteralPath $candidate).Path
+    $bytes = [System.IO.File]::ReadAllBytes($resolved)
+    $hasUtf8Bom =
+        $bytes.Length -ge 3 -and
+        $bytes[0] -eq 0xEF -and
+        $bytes[1] -eq 0xBB -and
+        $bytes[2] -eq 0xBF
+    if (-not $hasUtf8Bom) {
+        throw ('CorrespondentFile must be UTF-8 with BOM: {0}' -f $resolved)
+    }
+
+    $strictUtf8 = [System.Text.UTF8Encoding]::new($true, $true)
+    try {
+        $text = $strictUtf8.GetString($bytes, 3, $bytes.Length - 3)
+    }
+    catch {
+        throw ('CorrespondentFile contains invalid UTF-8: {0}' -f $resolved)
+    }
+
+    $entryCount = @(
+        $text -split '\r\n?|\n' |
+            Where-Object {
+                $line = $_.Trim()
+                $line -and -not $line.StartsWith('#')
+            }
+    ).Count
+    if ($entryCount -eq 0) {
+        throw ('CorrespondentFile has no usable entries: {0}' -f $resolved)
+    }
+
+    Write-Host ('Private correspondent input enabled ({0} entries).' -f $entryCount) -ForegroundColor Green
+    return $resolved
+}
+
+$EmbeddedCorrespondentFile = Resolve-CorrespondentInput
 
 $EncodingVerifier = Join-Path $PSScriptRoot 'verify_text_encoding.ps1'
 if (-not (Test-Path -LiteralPath $EncodingVerifier)) {
@@ -226,12 +279,18 @@ if (-not $Makensis) {
 
 Push-Location (Join-Path $ProjectRoot 'installer')
 try {
-    & $Makensis `
-        '/INPUTCHARSET' `
-        'UTF8' `
-        '/OUTPUTCHARSET' `
-        'UTF8SIG' `
-        'ReNamer_Setup.nsi'
+    $MakensisArguments = @(
+        '/INPUTCHARSET',
+        'UTF8',
+        '/OUTPUTCHARSET',
+        'UTF8SIG'
+    )
+    if ($EmbeddedCorrespondentFile) {
+        $MakensisArguments += ('/DCORRESPONDENT_SOURCE_FILE={0}' -f $EmbeddedCorrespondentFile)
+    }
+    $MakensisArguments += 'ReNamer_Setup.nsi'
+
+    & $Makensis @MakensisArguments
     if ($LASTEXITCODE -ne 0) {
         throw 'NSIS build failed.'
     }
