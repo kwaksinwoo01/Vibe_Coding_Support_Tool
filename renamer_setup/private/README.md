@@ -40,14 +40,32 @@ renamer_setup\private\correspondent.txt
 `scripts\build.ps1`은 이 파일이 존재하면 설치 프로그램에 자동으로 포함합니다.
 다른 비공개 파일을 사용하려면 `-CorrespondentFile` 옵션으로 지정할 수 있습니다.
 
-신규 설치에서는 내장 목록을 다음 런타임 파일로 복사합니다.
+설치기는 내장 목록을 다음 배포 기본값 파일로 복사합니다.
 
 ```text
-%LOCALAPPDATA%\ReNamerDocumentClassifier\config\correspondent.txt
+%LOCALAPPDATA%\ReNamerDocumentClassifier\support\correspondent.defaults.txt
 ```
 
-업그레이드 설치에서는 사용자가 편집한 기존 런타임 파일을 덮어쓰지 않습니다.
-따라서 새 업체를 비공개 빌드 입력에 추가해도 기존 설치 환경에는 자동 반영되지
-않으며, 설치된 런타임 파일에도 직접 추가해야 합니다.
+신규 설치와 업그레이드 설치 모두 `sync-correspondents` 검증기를 실행합니다. 검증기는
+이전 배포 기본값, 사용자가 편집한 `config\correspondent.txt`, 새 배포 기본값을
+3-way 병합합니다. 사용자가 추가한 별칭과 표시 이름, 사용자가 삭제한 기본 별칭은
+보존하면서 패치에서 추가·삭제한 기본 별칭을 반영합니다.
 
-빌드 결과는 `dist\ReNamer_Setup_7.3.exe`로 생성됩니다.
+이전 기본값은 다음 파일에 저장됩니다.
+
+```text
+%LOCALAPPDATA%\ReNamerDocumentClassifier\config\correspondent.defaults.applied.txt
+%LOCALAPPDATA%\ReNamerDocumentClassifier\config\correspondent.defaults.state.json
+```
+
+이 기능이 처음 적용되는 기존 설치는 이전 기본값이 없으므로 사용자 목록과 새 목록을
+안전하게 합집합한 뒤 기준 스냅샷을 만듭니다. 병합 전 사용자 파일은
+`config\correspondent-backups`에 백업합니다.
+
+기본 별칭을 제거하는 패치를 만들려면 이 파일의 기존 규칙에서 해당 별칭을 삭제합니다.
+예를 들어 `thermofisher.com`을 삭제한 다음 새 설치 프로그램을 빌드하면, 다음 설치에서
+그 기본 별칭만 제거되고 사용자가 추가한 `Thermo`, `ThermoFisher` 같은 별칭은 유지됩니다.
+패치 전후 규칙을 같은 업체로 연결할 수 있도록 표시 이름 또는 검색 별칭을 하나 이상
+공통으로 유지해야 합니다.
+
+빌드 결과는 `dist\ReNamer_Setup_7.4.1.exe`로 생성됩니다.

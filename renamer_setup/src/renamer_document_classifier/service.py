@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import tempfile
 
 from .classification import ClassificationResult, DocumentKind, classify_document_text
 from .correspondent_config import (
@@ -16,19 +17,17 @@ from .extractors import (
     SPREADSHEET_EXTENSIONS,
     extract_primary_text,
     extract_spreadsheet_fallback,
-    ocr_pdf,
+    ocr_images_with_paddleocr,
+    ocr_images_with_tesseract,
+    render_pdf_pages,
 )
 from .logging_utils import append_log
 from .names_config import resolve_person_name
 
 
-PDF_OCR_ATTEMPTS: tuple[dict[str, int | bool], ...] = (
-    {"page_segmentation_mode": 6},
-    {"page_segmentation_mode": 3},
-    {"page_segmentation_mode": 11},
-    {"page_segmentation_mode": 3, "dpi": 300, "grayscale": True},
-    {"page_segmentation_mode": 11, "dpi": 300, "grayscale": True},
-)
+PDF_OCR_PRIMARY_PSM = 3
+PDF_OCR_PARALLEL_PSMS = (6, 11)
+PDF_OCR_HIGH_RESOLUTION_PSMS = (3, 11)
 
 
 @dataclass(slots=True)
@@ -42,6 +41,32 @@ class InspectionResult:
 
 def _classify(text: str) -> ClassificationResult:
     return classify_document_text(text)
+
+
+def _apply_ocr_attempt(
+    attempt: ExtractionResult,
+    extraction: ExtractionResult,
+    classification: ClassificationResult,
+    *,
+    original_name: str,
+    correspondents: tuple[CorrespondentRule, ...],
+) -> tuple[ClassificationResult, str]:
+    extraction.extend(attempt)
+
+    # Classify the latest OCR text on its own first. Otherwise a title found
+    # by a later engine can land beyond the title scan limit after earlier OCR
+    # text and still be missed.
+    attempt_classification = _classify(attempt.text)
+    if attempt_classification.kind is not DocumentKind.UNKNOWN:
+        classification = attempt_classification
+    else:
+        classification = _classify(extraction.text)
+
+    correspondent = resolve_correspondent(
+        (original_name, extraction.text),
+        correspondents,
+    )
+    return classification, correspondent
 
 
 def _extract_pdf_ocr_adaptively(
@@ -58,28 +83,90 @@ def _extract_pdf_ocr_adaptively(
         correspondents,
     )
 
-    for attempt_index, attempt_options in enumerate(PDF_OCR_ATTEMPTS):
-        attempt = ocr_pdf(path, limits, **attempt_options)
-        extraction.extend(attempt)
-
-        # Classify the latest OCR text on its own first. Otherwise a title found
-        # by a later layout mode can land beyond the title scan limit after the
-        # earlier OCR text and still be missed.
-        attempt_classification = _classify(attempt.text)
-        if attempt_classification.kind is not DocumentKind.UNKNOWN:
-            classification = attempt_classification
-        else:
-            classification = _classify(extraction.text)
-
-        correspondent = resolve_correspondent(
-            (original_name, extraction.text),
-            correspondents,
+    with tempfile.TemporaryDirectory(prefix="renamer_pdf_ocr_") as temp_dir:
+        workspace = Path(temp_dir)
+        rendered = render_pdf_pages(
+            path,
+            limits,
+            workspace / "dpi300",
         )
-        if (
-            classification.kind is not DocumentKind.UNKNOWN
-            and (correspondent or not correspondents or attempt_index >= 2)
+        extraction.extend(rendered.extraction)
+
+        primary_attempt = ocr_images_with_tesseract(
+            rendered.pages,
+            limits,
+            (PDF_OCR_PRIMARY_PSM,),
+        )[PDF_OCR_PRIMARY_PSM]
+        classification, correspondent = _apply_ocr_attempt(
+            primary_attempt,
+            extraction,
+            classification,
+            original_name=original_name,
+            correspondents=correspondents,
+        )
+        if classification.kind is not DocumentKind.UNKNOWN and (
+            correspondent or not correspondents
         ):
             return classification, correspondent
+
+        parallel_attempts = ocr_images_with_tesseract(
+            rendered.pages,
+            limits,
+            PDF_OCR_PARALLEL_PSMS,
+        )
+        for mode in PDF_OCR_PARALLEL_PSMS:
+            classification, correspondent = _apply_ocr_attempt(
+                parallel_attempts[mode],
+                extraction,
+                classification,
+                original_name=original_name,
+                correspondents=correspondents,
+            )
+            if classification.kind is not DocumentKind.UNKNOWN and (
+                correspondent or not correspondents
+            ):
+                return classification, correspondent
+
+        # Preserve the established correspondent search budget: once all three
+        # 300 DPI Tesseract layouts have classified the document, do not start
+        # heavier engines only to search for an unregistered correspondent.
+        if classification.kind is not DocumentKind.UNKNOWN:
+            return classification, correspondent
+
+        paddle_attempt = ocr_images_with_paddleocr(rendered.pages, limits)
+        classification, correspondent = _apply_ocr_attempt(
+            paddle_attempt,
+            extraction,
+            classification,
+            original_name=original_name,
+            correspondents=correspondents,
+        )
+        if classification.kind is not DocumentKind.UNKNOWN:
+            return classification, correspondent
+
+        high_resolution = render_pdf_pages(
+            path,
+            limits,
+            workspace / "dpi400-gray",
+            dpi=400,
+            grayscale=True,
+        )
+        extraction.extend(high_resolution.extraction)
+        high_resolution_attempts = ocr_images_with_tesseract(
+            high_resolution.pages,
+            limits,
+            PDF_OCR_HIGH_RESOLUTION_PSMS,
+        )
+        for mode in PDF_OCR_HIGH_RESOLUTION_PSMS:
+            classification, correspondent = _apply_ocr_attempt(
+                high_resolution_attempts[mode],
+                extraction,
+                classification,
+                original_name=original_name,
+                correspondents=correspondents,
+            )
+            if classification.kind is not DocumentKind.UNKNOWN:
+                return classification, correspondent
 
     return classification, correspondent
 

@@ -130,7 +130,7 @@ installed 7.3 script:        5290D141549F2F50531F8C37357D8F00FF814601E0A5531AB09
 - Project scope: `renamer_setup/`
 - Local build: Python 3.13.x, PyInstaller, NSIS
 - Installed root: `%LOCALAPPDATA%\ReNamerDocumentClassifier`
-- ReNamer script: `%USERPROFILE%\Documents\den4b\ReNamer\Scripts\7.3_자동이름 변경 시스템.pas`
+- ReNamer script: `%USERPROFILE%\Documents\den4b\ReNamer\Scripts\7.4_자동이름 변경 시스템.pas`
 
 ## Confirmed working behavior
 
@@ -192,7 +192,8 @@ renamer_setup/src/renamer_document_classifier/cli.py
 renamer_setup/src/renamer_document_classifier/service.py
 renamer_setup/src/renamer_document_classifier/extractors.py
 renamer_setup/src/renamer_document_classifier/logging_utils.py
-renamer_setup/renamer/7.3_자동이름 변경 시스템.pas
+renamer_setup/src/renamer_document_classifier/correspondent_sync.py
+renamer_setup/renamer/7.4_자동이름 변경 시스템.pas
 renamer_setup/installer/ReNamer_Setup.nsi
 renamer_setup/scripts/build.ps1
 renamer_setup/classifier.spec
@@ -385,7 +386,7 @@ Before a clean build:
 ```powershell
 Remove-Item .\build -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item .\dist\classifier -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item .\dist\ReNamer_Setup_7.3.exe -Force -ErrorAction SilentlyContinue
+Remove-Item .\dist\ReNamer_Setup_7.4.1.exe -Force -ErrorAction SilentlyContinue
 ```
 
 The pytest temporary cleanup warning under an ESTsoft public temp directory is not the runtime failure. Tests have reported success before that cleanup warning.

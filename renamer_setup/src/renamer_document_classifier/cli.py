@@ -8,10 +8,12 @@ import subprocess
 import sys
 import traceback
 
+from . import __version__
 from .correspondent_config import (
     correspondent_path,
     ensure_correspondent_file,
 )
+from .correspondent_sync import sync_correspondent_defaults
 from .names_config import (
     DEFAULT_KNOWN_NAMES,
     load_user_config,
@@ -160,7 +162,13 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser.add_argument("--max-rows", type=int, default=200)
     inspect_parser.add_argument("--max-columns", type=int, default=50)
     inspect_parser.add_argument("--max-characters", type=int, default=50_000)
-    inspect_parser.add_argument("--ocr-dpi", type=int, default=220)
+    inspect_parser.add_argument("--ocr-dpi", type=int, default=300)
+    inspect_parser.add_argument(
+        "--ocr-workers",
+        type=int,
+        default=0,
+        help="병렬 OCR 작업 수입니다. 0이면 CPU 수에 맞춰 최대 4개를 사용합니다.",
+    )
     inspect_parser.add_argument("--timeout", type=int, default=120)
 
     configure_parser = subparsers.add_parser("configure", help="사용자 이름 설정을 변경합니다.")
@@ -176,6 +184,15 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "open-correspondents",
         help="correspondent.txt 거래처 목록을 엽니다.",
+    )
+    sync_correspondents_parser = subparsers.add_parser(
+        "sync-correspondents",
+        help="배포 기본 거래처와 사용자 거래처 목록을 3-way 병합합니다.",
+    )
+    sync_correspondents_parser.add_argument("--defaults", required=True)
+    sync_correspondents_parser.add_argument(
+        "--release-version",
+        default=__version__,
     )
     return parser
 
@@ -195,6 +212,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "open-correspondents":
         _open_path(correspondent_path())
+        return 0
+
+    if args.command == "sync-correspondents":
+        defaults_path = Path(os.path.expandvars(args.defaults)).expanduser()
+        result = sync_correspondent_defaults(
+            defaults_path,
+            release_version=args.release_version,
+        )
+        print("STATUS=OK")
+        print(f"CORRESPONDENT_SYNC={'UPDATED' if result.changed else 'UNCHANGED'}")
+        print(f"MERGE_MODE={result.mode}")
+        print(f"RULE_COUNT={result.rule_count}")
+        print(f"DEFAULTS_SHA256={result.defaults_sha256}")
+        print(f"BACKUP_PATH={result.backup_path or ''}")
         return 0
 
     if args.command == "clear-log":
@@ -223,6 +254,7 @@ def main(argv: list[str] | None = None) -> int:
             max_columns=max(1, args.max_columns),
             max_characters=max(1_000, args.max_characters),
             ocr_dpi=max(100, args.ocr_dpi),
+            ocr_workers=max(0, args.ocr_workers),
             timeout_seconds=max(10, args.timeout),
         )
 
