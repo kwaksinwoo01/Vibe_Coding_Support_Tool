@@ -385,7 +385,7 @@ Before a clean build:
 ```powershell
 Remove-Item .\build -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item .\dist\classifier -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item .\dist\ReNamer_Setup.exe -Force -ErrorAction SilentlyContinue
+Remove-Item .\dist\ReNamer_Setup_7.3.exe -Force -ErrorAction SilentlyContinue
 ```
 
 The pytest temporary cleanup warning under an ESTsoft public temp directory is not the runtime failure. Tests have reported success before that cleanup warning.

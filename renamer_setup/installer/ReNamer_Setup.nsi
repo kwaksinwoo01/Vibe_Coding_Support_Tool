@@ -8,6 +8,7 @@ Unicode true
 
 !define PRODUCT_NAME "ReNamer Document Classifier"
 !define PRODUCT_VERSION "7.3.0"
+!define PRODUCT_FILE_VERSION "7.3"
 !define PRODUCT_PUBLISHER "KWAKSINWOO"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\ReNamerDocumentClassifier.exe"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReNamerDocumentClassifier"
@@ -15,7 +16,7 @@ Unicode true
 !define RENAMER_SCRIPT_DIR "$DOCUMENTS\den4b\ReNamer\Scripts"
 
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
-OutFile "..\dist\ReNamer_Setup.exe"
+OutFile "..\dist\ReNamer_Setup_${PRODUCT_FILE_VERSION}.exe"
 InstallDir "$LOCALAPPDATA\ReNamerDocumentClassifier"
 InstallDirRegKey HKCU "${PRODUCT_UNINST_KEY}" "InstallLocation"
 RequestExecutionLevel user

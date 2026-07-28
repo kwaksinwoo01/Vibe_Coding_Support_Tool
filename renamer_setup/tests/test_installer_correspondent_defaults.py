@@ -41,6 +41,20 @@ def test_build_supports_default_and_explicit_private_input() -> None:
     assert "CorrespondentFile must be UTF-8 with BOM" in build_script
 
 
+def test_installer_output_uses_the_release_name() -> None:
+    installer = (PROJECT_ROOT / "installer" / "ReNamer_Setup.nsi").read_text(
+        encoding="utf-8-sig"
+    )
+    build_script = (PROJECT_ROOT / "scripts" / "build.ps1").read_text(
+        encoding="utf-8-sig"
+    )
+
+    assert '!define PRODUCT_FILE_VERSION "7.3"' in installer
+    assert 'OutFile "..\\dist\\ReNamer_Setup_${PRODUCT_FILE_VERSION}.exe"' in installer
+    assert "dist\\ReNamer_Setup_7.3.exe" in build_script
+    assert "dist\\ReNamer_Setup.exe" in build_script
+
+
 def test_pascal_script_supports_correspondent_alias_mappings() -> None:
     pascal_script = (
         PROJECT_ROOT / "renamer" / "7.3_자동이름 변경 시스템.pas"

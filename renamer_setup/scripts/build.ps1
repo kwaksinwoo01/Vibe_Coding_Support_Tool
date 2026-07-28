@@ -257,9 +257,14 @@ if (-not $SkipTests) {
     }
 }
 
+$Installer = Join-Path $ProjectRoot 'dist\ReNamer_Setup_7.3.exe'
+$LegacyInstaller = Join-Path $ProjectRoot 'dist\ReNamer_Setup.exe'
+
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
     (Join-Path $ProjectRoot 'build'), `
-    (Join-Path $ProjectRoot 'dist\classifier')
+    (Join-Path $ProjectRoot 'dist\classifier'), `
+    $Installer, `
+    $LegacyInstaller
 
 & $VenvPython -m PyInstaller --noconfirm classifier.spec
 if ($LASTEXITCODE -ne 0) {
@@ -299,7 +304,6 @@ finally {
     Pop-Location
 }
 
-$Installer = Join-Path $ProjectRoot 'dist\ReNamer_Setup.exe'
 if (-not (Test-Path -LiteralPath $Installer)) {
     throw ('Installer output not found: {0}' -f $Installer)
 }

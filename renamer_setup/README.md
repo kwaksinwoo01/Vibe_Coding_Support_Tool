@@ -1,10 +1,10 @@
 # ReNamer Document Classifier Setup
 
-일반 사용자가 Python, Poppler, Tesseract, LibreOffice 경로를 직접 설정하지 않고 `ReNamer_Setup.exe` 하나로 문서 자동 분류 기능을 설치하기 위한 프로젝트입니다.
+일반 사용자가 Python, Poppler, Tesseract, LibreOffice 경로를 직접 설정하지 않고 `ReNamer_Setup_7.3.exe` 하나로 문서 자동 분류 기능을 설치하기 위한 프로젝트입니다.
 
 ## 사용자 설치 흐름
 
-1. `ReNamer_Setup.exe` 실행
+1. `ReNamer_Setup_7.3.exe` 실행
 2. 설치 화면에서 **기본 사용자 이름** 입력
 3. 필요한 경우 추가 인식 이름을 쉼표로 입력
 4. 설치 완료 후 ReNamer에서 `PascalScript` 규칙 추가
@@ -116,7 +116,7 @@ VS Code에서 수정할 때 오른쪽 아래 인코딩 표시를 눌러 **Save w
 
 ## 로컬 빌드
 
-설치 파일 컴파일은 개발자의 로컬 Windows 환경에서 수행합니다. GitHub Actions는 소스 인코딩과 단위 테스트만 검증하며 `ReNamer_Setup.exe`를 생성하지 않습니다.
+설치 파일 컴파일은 개발자의 로컬 Windows 환경에서 수행합니다. GitHub Actions는 소스 인코딩과 단위 테스트만 검증하며 `ReNamer_Setup_7.3.exe`를 생성하지 않습니다.
 
 ### 필요 도구
 
@@ -146,13 +146,17 @@ All required installer sources use UTF-8 BOM.
 
 ### 3. 설치 파일 전체 빌드
 
-Python 3.13 실제 경로를 지정하는 권장 명령:
+현재 저장소에서 Python 3.13 실제 경로를 지정해 7.3 설치 프로그램을 컴파일하는 권장 명령:
 
 ```powershell
+cd C:\Users\user\Documents\github\Vibe_Coding_Support_Tool\renamer_setup
+
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\build.ps1 `
   -PythonPath "C:\Users\user\AppData\Local\Programs\Python\Python313\python.exe"
 ```
+
+이 명령은 인코딩 검사와 단위 테스트, `classifier.exe` 패키징, NSIS 컴파일을 순서대로 실행합니다. 에이전트가 빌드를 관찰할 필요 없이 개발자가 직접 실행하고 결과를 공유하는 협업 절차를 사용합니다.
 
 거래처 기본 목록을 포함할 배포 빌드는 Git에서 제외되는 다음 파일을 UTF-8 BOM으로 작성합니다.
 
@@ -183,7 +187,7 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
 빌드 결과:
 
 ```text
-dist\ReNamer_Setup.exe
+dist\ReNamer_Setup_7.3.exe
 ```
 
 ## 설치 후 ReNamer 설정
@@ -203,7 +207,7 @@ dist\ReNamer_Setup.exe
 2. `installer\ReNamer_Setup.nsi` 첫 줄 앞에 UTF-8 BOM이 존재하는지 확인합니다.
 3. NSIS 3.x를 사용하고 있는지 확인합니다.
 4. `build.ps1`을 통하지 않고 NSIS GUI에서 직접 컴파일했다면 입력 문자셋이 UTF-8인지 확인합니다.
-5. 이전에 생성한 `dist\ReNamer_Setup.exe`를 삭제한 뒤 다시 빌드합니다.
+5. 이전에 생성한 `dist\ReNamer_Setup_7.3.exe`를 삭제한 뒤 다시 빌드합니다.
 
 ## 거래처 목록 관리
 
@@ -267,6 +271,6 @@ ReNamer에서 사용자가 선택하는 스크립트:
 
 - 일반 사용자에게 `.py`, `.cmd`, 패키지 설치 명령을 직접 제공하지 않습니다.
 - 일반 사용자는 `.txt` 확장자를 `.pas`로 변경하지 않습니다.
-- 배포물은 로컬에서 빌드한 `ReNamer_Setup.exe` 하나를 기본으로 합니다.
+- 배포물은 로컬에서 빌드한 `ReNamer_Setup_7.3.exe` 하나를 기본으로 합니다.
 - 소스 파일은 개발 및 유지보수 목적으로만 저장합니다.
 - 설치 파일을 배포하기 전 한글 표시, 사용자 이름 저장, ReNamer Scripts 등록, 제거 기능을 실제 Windows PC에서 확인합니다.
