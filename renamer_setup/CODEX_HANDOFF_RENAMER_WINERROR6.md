@@ -195,6 +195,8 @@ renamer_setup/src/renamer_document_classifier/logging_utils.py
 renamer_setup/src/renamer_document_classifier/correspondent_sync.py
 renamer_setup/renamer/7.4_자동이름 변경 시스템.pas
 renamer_setup/installer/ReNamer_Setup.nsi
+renamer_setup/assets/classifier_ico_pack.ico
+renamer_setup/assets/correspondents_ico_pack.ico
 renamer_setup/scripts/build.ps1
 renamer_setup/classifier.spec
 ```

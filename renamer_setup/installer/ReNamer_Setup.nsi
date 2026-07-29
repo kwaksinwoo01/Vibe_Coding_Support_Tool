@@ -32,16 +32,13 @@ Var PaddleDependencyStatus
 Var CorrespondentSyncStatus
 
 !define MUI_ABORTWARNING
-!define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
+!define MUI_ICON "..\assets\classifier_ico_pack.ico"
 !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
 
 !insertmacro MUI_PAGE_WELCOME
 Page custom UserSettingsPageCreate UserSettingsPageLeave
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_RUN "$INSTDIR\classifier\classifier.exe"
-!define MUI_FINISHPAGE_RUN_PARAMETERS "configure"
-!define MUI_FINISHPAGE_RUN_TEXT "설치된 사용자 설정 확인 및 변경"
 !define MUI_FINISHPAGE_SHOWREADME "${RENAMER_SCRIPT_DIR}\${RENAMER_SCRIPT_NAME}"
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "ReNamer용 '7.4 자동이름 변경 시스템' 스크립트 열기"
 !insertmacro MUI_PAGE_FINISH
@@ -127,6 +124,10 @@ Section "MainProgram" SEC_MAIN
     Delete "$INSTDIR\support\correspondent.defaults.txt"
   !endif
 
+  SetOutPath "$INSTDIR\assets"
+  File "..\assets\classifier_ico_pack.ico"
+  File "..\assets\correspondents_ico_pack.ico"
+
   SetOutPath "$INSTDIR\tools"
   File /nonfatal /r "..\vendor\tools\*.*"
 
@@ -168,7 +169,7 @@ Section "MainProgram" SEC_MAIN
   nsExec::Exec 'powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\support\install_paddleocr.ps1" -InstallRoot "$INSTDIR"'
   Pop $0
   ${If} $0 != 0
-    StrCpy $PaddleDependencyStatus "PaddleOCR 자동 설치에 실패했습니다(종료 코드 $0). Tesseract 분류는 계속 사용할 수 있습니다. 시작 메뉴의 'PaddleOCR 보조 엔진 설치'에서 다시 시도할 수 있습니다."
+    StrCpy $PaddleDependencyStatus "PaddleOCR 자동 설치에 실패했습니다(종료 코드 $0). Tesseract 분류는 계속 사용할 수 있으며 설치 프로그램을 다시 실행해 재시도할 수 있습니다."
     DetailPrint "$PaddleDependencyStatus"
     MessageBox MB_ICONEXCLAMATION|MB_OK "$PaddleDependencyStatus"
   ${Else}
@@ -188,33 +189,27 @@ Section "MainProgram" SEC_MAIN
   WriteRegDWORD HKCU "${PRODUCT_UNINST_KEY}" "NoRepair" 1
 
   CreateDirectory "$SMPROGRAMS\ReNamer Document Classifier"
+  Delete "$SMPROGRAMS\ReNamer Document Classifier\분류 로그 열기.lnk"
+  Delete "$SMPROGRAMS\ReNamer Document Classifier\분류 로그 초기화.lnk"
+  Delete "$SMPROGRAMS\ReNamer Document Classifier\PaddleOCR 보조 엔진 설치.lnk"
+  Delete "$SMPROGRAMS\ReNamer Document Classifier\제거.lnk"
+  Delete "$SMPROGRAMS\ReNamer Document Classifier\ReNamer_Setup_*_Uninstall .lnk"
   CreateShortCut \
     "$SMPROGRAMS\ReNamer Document Classifier\사용자 설정 변경.lnk" \
     "$INSTDIR\classifier\classifier.exe" \
     "configure"
   CreateShortCut \
-    "$SMPROGRAMS\ReNamer Document Classifier\분류 로그 열기.lnk" \
-    "$INSTDIR\classifier\classifier.exe" \
-    "open-log"
-  CreateShortCut \
-    "$SMPROGRAMS\ReNamer Document Classifier\분류 로그 초기화.lnk" \
-    "$INSTDIR\classifier\classifier.exe" \
-    "clear-log"
-  CreateShortCut \
     "$SMPROGRAMS\ReNamer Document Classifier\거래처 목록 편집.lnk" \
     "$INSTDIR\classifier\classifier.exe" \
-    "open-correspondents"
-  CreateShortCut \
-    "$SMPROGRAMS\ReNamer Document Classifier\PaddleOCR 보조 엔진 설치.lnk" \
-    "powershell.exe" \
-    "-NoLogo -NoProfile -ExecutionPolicy Bypass -File $\"$INSTDIR\support\install_paddleocr.ps1$\" -InstallRoot $\"$INSTDIR$\""
+    "open-correspondents" \
+    "$INSTDIR\assets\correspondents_ico_pack.ico"
   Delete "$SMPROGRAMS\ReNamer Document Classifier\7.0 자동이름 변경 시스템 스크립트.lnk"
   Delete "$SMPROGRAMS\ReNamer Document Classifier\7.3 자동이름 변경 시스템 스크립트.lnk"
   CreateShortCut \
     "$SMPROGRAMS\ReNamer Document Classifier\7.4 자동이름 변경 시스템 스크립트.lnk" \
     "${RENAMER_SCRIPT_DIR}\${RENAMER_SCRIPT_NAME}"
   CreateShortCut \
-    "$SMPROGRAMS\ReNamer Document Classifier\제거.lnk" \
+    "$SMPROGRAMS\ReNamer Document Classifier\ReNamer_Setup_${PRODUCT_FILE_VERSION}_Uninstall.lnk" \
     "$INSTDIR\Uninstall.exe"
 
   Delete "$DESKTOP\ReNamer 문서 분류 스크립트.lnk"
@@ -242,6 +237,7 @@ Section "Uninstall"
   RMDir /r "$INSTDIR\classifier"
   RMDir /r "$INSTDIR\renamer"
   RMDir /r "$INSTDIR\support"
+  RMDir /r "$INSTDIR\assets"
   RMDir /r "$INSTDIR\tools"
   RMDir /r "$INSTDIR\logs"
   RMDir /r "$INSTDIR\temp"

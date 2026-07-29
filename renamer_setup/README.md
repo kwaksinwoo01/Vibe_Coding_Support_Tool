@@ -73,6 +73,9 @@ renamer_setup/
 │  └─ 7.4_자동이름 변경 시스템.pas
 ├─ installer/
 │  └─ ReNamer_Setup.nsi
+├─ assets/
+│  ├─ classifier_ico_pack.ico
+│  └─ correspondents_ico_pack.ico
 ├─ scripts/
 │  ├─ build.ps1
 │  ├─ install_optional_dependencies.ps1
@@ -209,6 +212,8 @@ dist\ReNamer_Setup_7.4.1.exe
 
 설치기는 시작 메뉴와 바탕 화면에도 `7.4 자동이름 변경 시스템` 바로가기를 생성합니다.
 
+시작 메뉴에는 사용자 설정 변경, 거래처 목록 편집, ReNamer 스크립트, `ReNamer_Setup_7.4.1_Uninstall ` 제거 바로가기만 생성합니다. 분류 로그와 PaddleOCR 수동 설치 바로가기는 생성하지 않으며, 설치 완료 화면에서도 `classifier.exe configure`를 다시 실행하지 않습니다.
+
 ## OCR 성능과 PaddleOCR 보조 엔진
 
 PDF OCR은 하드웨어 오버클럭 없이 중복 작업과 직렬 대기를 줄이는 방식으로 최적화합니다. 기본 렌더링은 300 DPI이며 PSM 3을 먼저 실행합니다. 판정하지 못하면 같은 렌더링 이미지를 재사용하면서 PSM 6과 11을 최대 4개 작업으로 제한해 병렬 실행합니다. 그래도 `UNKNOWN`이면 PaddleOCR ONNX를 시도하고, 마지막으로 400 DPI grayscale 이미지에서 Tesseract PSM 3/11을 실행합니다.
@@ -217,7 +222,7 @@ PDF OCR은 하드웨어 오버클럭 없이 중복 작업과 직렬 대기를 �
 
 7.4 설치 프로그램은 PaddleOCR 전용 Python 환경, ONNX Runtime, 한국어 모델을 설치 과정에서 자동으로 준비합니다. 사용자는 별도 PowerShell 명령이나 시작 메뉴 작업을 수행할 필요가 없습니다. 패키지와 모델을 내려받으므로 최초 설치에는 인터넷 연결이 필요하고 시간이 걸릴 수 있습니다.
 
-자동 설치가 네트워크 문제 등으로 실패해도 Tesseract 분류는 계속 사용할 수 있습니다. 상세 단계와 실패 원인은 `%LOCALAPPDATA%\ReNamerDocumentClassifier\support\paddleocr-install.log`에 기록됩니다. 이 경우에만 시작 메뉴의 **ReNamer Document Classifier → PaddleOCR 보조 엔진 설치**를 실행하거나 다음 복구 명령을 사용합니다.
+자동 설치가 네트워크 문제 등으로 실패해도 Tesseract 분류는 계속 사용할 수 있습니다. 상세 단계와 실패 원인은 `%LOCALAPPDATA%\ReNamerDocumentClassifier\support\paddleocr-install.log`에 기록됩니다. 일반 사용자는 설치 프로그램을 다시 실행해 재시도합니다. 개발자나 지원 담당자는 필요한 경우 다음 복구 명령을 사용할 수 있습니다.
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
@@ -281,6 +286,8 @@ ReNamer Document Classifier > 사용자 설정 변경
 ```text
 %LOCALAPPDATA%\ReNamerDocumentClassifier\
 ├─ classifier\
+├─ assets\classifier_ico_pack.ico
+├─ assets\correspondents_ico_pack.ico
 ├─ config\user.ini
 ├─ config\names.txt
 ├─ config\correspondent.txt

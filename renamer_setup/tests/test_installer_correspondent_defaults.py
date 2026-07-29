@@ -76,7 +76,7 @@ def test_installer_packages_optional_paddleocr_runner_and_installer() -> None:
 
     assert 'File "..\\scripts\\install_paddleocr.ps1"' in installer
     assert 'File "..\\scripts\\paddleocr_runner.py"' in installer
-    assert "PaddleOCR 보조 엔진 설치.lnk" in installer
+    assert installer.count("PaddleOCR 보조 엔진 설치.lnk") == 1
     assert "scripts\\install_paddleocr.ps1" in verifier
     assert "paddleocr==3.7.0" in paddle_installer
     assert "onnxruntime>=1.23,<2" in paddle_installer
@@ -96,8 +96,40 @@ def test_installer_automatically_prepares_paddleocr_with_safe_fallback() -> None
 
     assert installer.index(packaged_installer) < installer.index(automatic_install)
     assert "PaddleOCR 자동 설치에 실패했습니다" in installer
-    assert "Tesseract 분류는 계속 사용할 수 있습니다" in installer
+    assert "Tesseract 분류는 계속 사용할 수 있으며" in installer
     assert "PaddleOCR 보조 엔진과 한국어 모델 설치가 완료되었습니다" in installer
+
+
+def test_installer_uses_release_icons_and_minimal_shortcuts() -> None:
+    installer = (PROJECT_ROOT / "installer" / "ReNamer_Setup.nsi").read_text(
+        encoding="utf-8-sig"
+    )
+    classifier_spec = (PROJECT_ROOT / "classifier.spec").read_text(
+        encoding="utf-8"
+    )
+    classifier_icon = PROJECT_ROOT / "assets" / "classifier_ico_pack.ico"
+    correspondents_icon = PROJECT_ROOT / "assets" / "correspondents_ico_pack.ico"
+
+    assert classifier_icon.read_bytes()[:4] == b"\x00\x00\x01\x00"
+    assert correspondents_icon.read_bytes()[:4] == b"\x00\x00\x01\x00"
+    assert 'icon="assets/classifier_ico_pack.ico"' in classifier_spec
+    assert '!define MUI_ICON "..\\assets\\classifier_ico_pack.ico"' in installer
+    assert 'File "..\\assets\\classifier_ico_pack.ico"' in installer
+    assert 'File "..\\assets\\correspondents_ico_pack.ico"' in installer
+    assert (
+        '"open-correspondents" \\\n'
+        '    "$INSTDIR\\assets\\correspondents_ico_pack.ico"'
+    ) in installer
+
+    assert "MUI_FINISHPAGE_RUN" not in installer
+    assert installer.count("분류 로그 열기.lnk") == 1
+    assert installer.count("분류 로그 초기화.lnk") == 1
+    assert installer.count("PaddleOCR 보조 엔진 설치.lnk") == 1
+    assert "CreateShortCut \\\n    \"$SMPROGRAMS\\ReNamer Document Classifier\\제거.lnk\"" not in installer
+    assert (
+        '"$SMPROGRAMS\\ReNamer Document Classifier\\'
+        'ReNamer_Setup_${PRODUCT_FILE_VERSION}_Uninstall .lnk"'
+    ) in installer
 
 
 def test_paddleocr_runner_has_valid_python_syntax() -> None:
