@@ -125,6 +125,28 @@ installed 7.3 script:        5290D141549F2F50531F8C37357D8F00FF814601E0A5531AB09
 
 ## Repository and scope
 
+## Uncommitted adaptive parallel OCR work (awaiting ReNamer validation)
+
+The former sequential early-exit pipeline is being replaced without changing
+the installer version. The intended runtime is:
+
+1. render the first pages once at 300 DPI grayscale;
+2. run Tesseract PSM 3/6/11 and PaddleOCR against the same images;
+3. arbitrate independent classifications deterministically;
+4. render at 400 DPI grayscale and run PSM 3/11 only when the 300 DPI arbiter
+   still returns `UNKNOWN`.
+
+`config\ocr_scheduler.ini` contains the `[ocr.scheduler]` resource budget.
+Cross-process lock pools separately limit documents, Tesseract CPU processes,
+and the PaddleOCR auxiliary lane. The current PaddleOCR ONNX distribution is
+still CPU-backed, so it holds both an auxiliary slot and one CPU slot and runs
+with one internal CPU thread. `gpu_workers` names the separately budgeted
+auxiliary-engine lane and setting it to zero disables PaddleOCR. Other OCR engines and layout
+analyzers are extension points only and are not reported as active engines.
+
+This work must remain uncommitted and at version 7.4.1 until the user builds,
+installs, and verifies it in actual ReNamer with multiple PDFs.
+
 - Repository: `kwaksinwoo01/Vibe_Coding_Support_Tool`
 - Branch policy: work directly on `main`; do not create a feature branch.
 - Project scope: `renamer_setup/`

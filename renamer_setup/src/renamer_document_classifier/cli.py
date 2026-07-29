@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from datetime import datetime
 import os
 from pathlib import Path
@@ -22,6 +23,11 @@ from .names_config import (
 from .extractors import ExtractionLimits, health_report
 from .logging_utils import clear_log
 from .runtime_paths import installation_root, log_path
+from .ocr_scheduler import (
+    ensure_scheduler_file,
+    load_scheduler_config,
+    scheduler_path,
+)
 from .service import inspect_document
 
 
@@ -63,6 +69,7 @@ def _split_names(value: str) -> list[str]:
 def _configure_non_interactive(default_name: str, known_names: str) -> int:
     config = save_user_config(default_name, _split_names(known_names))
     ensure_correspondent_file()
+    ensure_scheduler_file()
     print("STATUS=OK")
     print(f"DEFAULT_NAME={config.default_name}")
     print(f"KNOWN_NAMES={','.join(config.known_names)}")
@@ -75,6 +82,7 @@ def _configure_gui() -> int:
 
     current = load_user_config()
     ensure_correspondent_file()
+    ensure_scheduler_file()
     root = tk.Tk()
     root.title("ReNamer 문서 분류기 사용자 설정")
     root.resizable(False, False)
@@ -162,14 +170,24 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser.add_argument("--max-rows", type=int, default=200)
     inspect_parser.add_argument("--max-columns", type=int, default=50)
     inspect_parser.add_argument("--max-characters", type=int, default=50_000)
-    inspect_parser.add_argument("--ocr-dpi", type=int, default=300)
+    inspect_parser.add_argument(
+        "--ocr-dpi",
+        type=int,
+        default=300,
+        help="호환용 옵션입니다. 표준 OCR 렌더링은 항상 300 DPI입니다.",
+    )
     inspect_parser.add_argument(
         "--ocr-workers",
         type=int,
         default=0,
-        help="병렬 OCR 작업 수입니다. 0이면 CPU 수에 맞춰 최대 4개를 사용합니다.",
+        help="ocr.scheduler.cpu_workers 임시 재정의 값입니다. 0이면 설정 파일을 사용합니다.",
     )
     inspect_parser.add_argument("--timeout", type=int, default=120)
+    inspect_parser.add_argument("--ocr-gpu-workers", type=int)
+    inspect_parser.add_argument("--ocr-max-documents-in-flight", type=int)
+    inspect_parser.add_argument("--ocr-max-attempts-per-document", type=int)
+    inspect_parser.add_argument("--ocr-memory-budget-mb", type=int)
+    inspect_parser.add_argument("--ocr-batch-size", type=int)
 
     configure_parser = subparsers.add_parser("configure", help="사용자 이름 설정을 변경합니다.")
     configure_parser.add_argument("--default-name")
@@ -238,6 +256,20 @@ def main(argv: list[str] | None = None) -> int:
         print("STATUS=OK")
         for key, value in health_report().items():
             print(f"{key.upper()}={value}")
+        scheduler = load_scheduler_config()
+        print(f"OCR_SCHEDULER_CONFIG={scheduler_path()}")
+        print(f"OCR_SCHEDULER_CPU_WORKERS={scheduler.cpu_workers}")
+        print(f"OCR_SCHEDULER_GPU_WORKERS={scheduler.gpu_workers}")
+        print(
+            "OCR_SCHEDULER_MAX_DOCUMENTS_IN_FLIGHT="
+            f"{scheduler.max_documents_in_flight}"
+        )
+        print(
+            "OCR_SCHEDULER_MAX_ATTEMPTS_PER_DOCUMENT="
+            f"{scheduler.max_attempts_per_document}"
+        )
+        print(f"OCR_SCHEDULER_MEMORY_BUDGET_MB={scheduler.memory_budget_mb}")
+        print(f"OCR_SCHEDULER_BATCH_SIZE={scheduler.batch_size}")
         return 0
 
     if args.command == "inspect":
@@ -257,12 +289,47 @@ def main(argv: list[str] | None = None) -> int:
             ocr_workers=max(0, args.ocr_workers),
             timeout_seconds=max(10, args.timeout),
         )
+        configured_scheduler = load_scheduler_config()
+        scheduler = replace(
+            configured_scheduler,
+            cpu_workers=(
+                max(1, args.ocr_workers)
+                if args.ocr_workers > 0
+                else configured_scheduler.cpu_workers
+            ),
+            gpu_workers=(
+                max(0, args.ocr_gpu_workers)
+                if args.ocr_gpu_workers is not None
+                else configured_scheduler.gpu_workers
+            ),
+            max_documents_in_flight=(
+                max(1, args.ocr_max_documents_in_flight)
+                if args.ocr_max_documents_in_flight is not None
+                else configured_scheduler.max_documents_in_flight
+            ),
+            max_attempts_per_document=(
+                max(1, args.ocr_max_attempts_per_document)
+                if args.ocr_max_attempts_per_document is not None
+                else configured_scheduler.max_attempts_per_document
+            ),
+            memory_budget_mb=(
+                max(256, args.ocr_memory_budget_mb)
+                if args.ocr_memory_budget_mb is not None
+                else configured_scheduler.memory_budget_mb
+            ),
+            batch_size=(
+                max(1, args.ocr_batch_size)
+                if args.ocr_batch_size is not None
+                else configured_scheduler.batch_size
+            ),
+        ).normalized()
 
         try:
             result = inspect_document(
                 source,
                 original_name=args.original_name,
                 limits=limits,
+                scheduler=scheduler,
             )
         except Exception as exc:  # noqa: BLE001 - stable CLI boundary
             trace_path = _write_error_trace("inspect", exc)

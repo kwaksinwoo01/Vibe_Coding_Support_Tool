@@ -34,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--language", default="korean")
+    parser.add_argument("--cpu-threads", type=int, default=1)
     parser.add_argument("--health", action="store_true")
     parser.add_argument("inputs", nargs="*")
     return parser
@@ -49,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
             ocr_version="PP-OCRv5",
             engine="onnxruntime",
             device="cpu",
+            cpu_threads=max(1, args.cpu_threads),
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,

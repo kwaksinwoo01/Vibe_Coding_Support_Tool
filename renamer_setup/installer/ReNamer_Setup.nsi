@@ -209,7 +209,7 @@ Section "MainProgram" SEC_MAIN
     "$SMPROGRAMS\ReNamer Document Classifier\7.4 자동이름 변경 시스템 스크립트.lnk" \
     "${RENAMER_SCRIPT_DIR}\${RENAMER_SCRIPT_NAME}"
   CreateShortCut \
-    "$SMPROGRAMS\ReNamer Document Classifier\ReNamer_Setup_${PRODUCT_FILE_VERSION}_Uninstall.lnk" \
+    "$SMPROGRAMS\ReNamer Document Classifier\ReNamer_Setup_${PRODUCT_FILE_VERSION}_Uninstall .lnk" \
     "$INSTDIR\Uninstall.exe"
 
   Delete "$DESKTOP\ReNamer 문서 분류 스크립트.lnk"

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 import json
@@ -121,11 +123,12 @@ def find_paddleocr_python() -> Path | None:
 
 
 def find_paddleocr_runner() -> Path | None:
-    candidates = [installation_root() / "support" / "paddleocr_runner.py"]
+    candidates: list[Path] = []
     if not getattr(sys, "frozen", False):
         candidates.append(
             Path(__file__).resolve().parents[2] / "scripts" / "paddleocr_runner.py"
         )
+    candidates.append(installation_root() / "support" / "paddleocr_runner.py")
     return next((path for path in candidates if path.is_file()), None)
 
 
@@ -402,6 +405,8 @@ def ocr_images_with_tesseract(
     image_paths: tuple[Path, ...],
     limits: ExtractionLimits,
     page_segmentation_modes: tuple[int, ...],
+    *,
+    cpu_slot_factory: Callable[[], AbstractContextManager[object]] | None = None,
 ) -> dict[int, ExtractionResult]:
     results = {
         mode: ExtractionResult(fallback_used=True)
@@ -432,17 +437,16 @@ def ocr_images_with_tesseract(
 
     def recognize(task: tuple[int, int, Path]) -> tuple[int, int, ExtractionResult]:
         mode, page_index, image_path = task
-        return (
-            mode,
-            page_index,
-            _ocr_image(
+        lease = cpu_slot_factory() if cpu_slot_factory else nullcontext()
+        with lease:
+            result = _ocr_image(
                 image_path,
                 limits,
                 page_segmentation_mode=mode,
                 tesseract_path=tesseract,
                 environment=process_environment,
-            ),
-        )
+            )
+        return mode, page_index, result
 
     if worker_count == 1:
         completed = map(recognize, tasks)
@@ -477,6 +481,9 @@ def ocr_images_with_tesseract(
 def ocr_images_with_paddleocr(
     image_paths: tuple[Path, ...],
     limits: ExtractionLimits,
+    *,
+    batch_size: int | None = None,
+    cpu_threads: int = 1,
 ) -> ExtractionResult:
     result = ExtractionResult(fallback_used=True)
     if not image_paths:
@@ -488,40 +495,63 @@ def ocr_images_with_paddleocr(
         result.warnings.append("paddleocr_missing")
         return result
 
+    active_batch_size = max(1, batch_size or len(image_paths))
+    text_parts: list[str] = []
+    succeeded = False
     with tempfile.TemporaryDirectory(prefix="renamer_paddleocr_") as temp_dir:
-        output_path = Path(temp_dir) / "result.json"
-        arguments = [
-            str(python),
-            str(runner),
-            "--output",
-            str(output_path),
-            "--language",
-            "korean",
-            *[str(path) for path in image_paths],
-        ]
-        process = _run(arguments, timeout_seconds=limits.timeout_seconds)
-        if process.returncode != 0:
-            result.warnings.append(
-                f"paddleocr_failed:returncode={process.returncode}:stderr={process.stderr.strip()}"
-            )
-            return result
-        if not output_path.is_file():
-            result.warnings.append("paddleocr_result_missing")
-            return result
-
-        try:
-            payload = json.loads(output_path.read_text(encoding="utf-8-sig"))
-            if payload.get("status") != "ok":
+        workspace = Path(temp_dir)
+        for batch_index, start in enumerate(
+            range(0, len(image_paths), active_batch_size)
+        ):
+            batch = image_paths[start : start + active_batch_size]
+            output_path = workspace / f"result-{batch_index}.json"
+            arguments = [
+                str(python),
+                str(runner),
+                "--output",
+                str(output_path),
+                "--language",
+                "korean",
+                "--cpu-threads",
+                str(max(1, cpu_threads)),
+                *[str(path) for path in batch],
+            ]
+            process = _run(arguments, timeout_seconds=limits.timeout_seconds)
+            if process.returncode != 0:
                 result.warnings.append(
-                    f"paddleocr_error:{payload.get('error', 'unknown')}"
+                    "paddleocr_failed:"
+                    f"batch={batch_index}:returncode={process.returncode}:"
+                    f"stderr={process.stderr.strip()}"
                 )
-                return result
-            result.text = _truncate(str(payload.get("text", "")), limits.max_characters)
-            result.methods.extend(["paddleocr", "paddleocr-onnx"])
-        except (OSError, ValueError, TypeError) as exc:
-            result.warnings.append(
-                f"paddleocr_result_invalid:{type(exc).__name__}:{exc}"
-            )
+                continue
+            if not output_path.is_file():
+                result.warnings.append(
+                    f"paddleocr_result_missing:batch={batch_index}"
+                )
+                continue
+
+            try:
+                payload = json.loads(output_path.read_text(encoding="utf-8-sig"))
+                if payload.get("status") != "ok":
+                    result.warnings.append(
+                        "paddleocr_error:"
+                        f"batch={batch_index}:"
+                        f"{payload.get('error', 'unknown')}"
+                    )
+                    continue
+                text = str(payload.get("text", ""))
+                if text:
+                    text_parts.append(text)
+                succeeded = True
+            except (OSError, ValueError, TypeError) as exc:
+                result.warnings.append(
+                    "paddleocr_result_invalid:"
+                    f"batch={batch_index}:{type(exc).__name__}:{exc}"
+                )
+
+    result.text = _truncate("\n".join(text_parts), limits.max_characters)
+    if succeeded:
+        result.methods.extend(["paddleocr", "paddleocr-onnx"])
     return result
 
 

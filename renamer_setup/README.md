@@ -216,9 +216,40 @@ dist\ReNamer_Setup_7.4.1.exe
 
 ## OCR 성능과 PaddleOCR 보조 엔진
 
-PDF OCR은 하드웨어 오버클럭 없이 중복 작업과 직렬 대기를 줄이는 방식으로 최적화합니다. 기본 렌더링은 300 DPI이며 PSM 3을 먼저 실행합니다. 판정하지 못하면 같은 렌더링 이미지를 재사용하면서 PSM 6과 11을 최대 4개 작업으로 제한해 병렬 실행합니다. 그래도 `UNKNOWN`이면 PaddleOCR ONNX를 시도하고, 마지막으로 400 DPI grayscale 이미지에서 Tesseract PSM 3/11을 실행합니다.
+PDF OCR은 다음 고정 파이프라인을 사용합니다.
 
-300 DPI는 200 DPI 원본의 OCR 글자 크기를 보완하고, 400 DPI 폴백은 고해상도 스캔의 작은 한글 획을 보존하기 위한 절충입니다. `--ocr-dpi`와 `--ocr-workers`는 직접 CLI를 시험할 때만 조정하며 일반 ReNamer 사용자는 변경할 필요가 없습니다.
+1. 처음 두 페이지를 300 DPI grayscale PNG로 한 번만 렌더링합니다.
+2. 같은 공통 이미지를 Tesseract PSM 3/6/11과 PaddleOCR ONNX에 전달합니다.
+3. Tesseract의 세 레이아웃 작업은 CPU 슬롯 안에서 병렬 실행하고, PaddleOCR은 별도 보조 엔진 슬롯에서 동시에 실행합니다.
+4. 완료 순서와 무관하게 각 결과를 독립 분류하고, 제목 검출과 엔진 투표를 사용해 결정론적으로 중재합니다.
+5. 모든 300 DPI 결과를 합친 뒤에도 `UNKNOWN`일 때만 400 DPI grayscale로 다시 렌더링하여 Tesseract PSM 3/11을 실행합니다.
+
+따라서 저해상도 실패 뒤 300 DPI로 다시 렌더링하는 비용이 없고, 모든 엔진이 같은 입력을 사용하므로 결과 비교와 재현성이 일정합니다. `--ocr-dpi`는 기존 명령 호환을 위해 남아 있지만 표준 렌더링은 항상 300 DPI입니다. 현재 활성 엔진은 Tesseract와 PaddleOCR이며, 다른 로컬 OCR 및 레이아웃 분석기는 중재기에 추가할 수 있는 확장 지점으로만 남겨 두고 실제 엔진이 없는 상태를 성공처럼 보고하지 않습니다.
+
+문서 간 동시 실행과 한 문서 내부 OCR 병렬 실행은 별도로 제한합니다. 설치 또는 업그레이드 시 다음 파일을 처음 한 번 생성하며, 사용자가 수정한 파일은 덮어쓰지 않습니다.
+
+```text
+%LOCALAPPDATA%\ReNamerDocumentClassifier\config\ocr_scheduler.ini
+```
+
+```ini
+[ocr.scheduler]
+cpu_workers = 8
+gpu_workers = 1
+max_documents_in_flight = 2
+max_attempts_per_document = 6
+memory_budget_mb = 2048
+batch_size = 2
+```
+
+- `cpu_workers`: 모든 classifier 프로세스가 공유하는 Tesseract 프로세스 슬롯 수입니다. 기본값은 논리 CPU 수의 절반이며 2~8 범위에서 자동 결정됩니다.
+- `gpu_workers`: PaddleOCR 보조 엔진 슬롯 수입니다. `0`이면 PaddleOCR을 사용하지 않습니다. 현재 배포 ONNX 런타임은 CPU 고정이므로 보조 엔진 슬롯과 CPU 슬롯을 함께 점유하고 내부 스레드를 1개로 제한합니다.
+- `max_documents_in_flight`: 동시에 OCR 단계에 들어갈 PDF 수입니다.
+- `max_attempts_per_document`: 한 PDF에서 허용할 엔진·PSM 시도 수입니다. 기본값 6은 300 DPI 네 번과 400 DPI 두 번을 허용합니다.
+- `memory_budget_mb`: 전체 OCR 메모리 예산입니다. DPI, 페이지 수, 동시 문서 수를 기준으로 한 문서 내부 동시 엔진 수를 줄입니다.
+- `batch_size`: 한 PaddleOCR 프로세스에 전달할 페이지 수입니다.
+
+문서, CPU, 보조 엔진 슬롯은 `%LOCALAPPDATA%\ReNamerDocumentClassifier\temp\ocr-scheduler`의 프로세스 간 잠금으로 공유됩니다. 따라서 여러 PDF가 각각 별도 `classifier.exe`로 실행되어도 설정값보다 많은 Tesseract/PaddleOCR 작업이 동시에 실행되지 않습니다.
 
 7.4 설치 프로그램은 PaddleOCR 전용 Python 환경, ONNX Runtime, 한국어 모델을 설치 과정에서 자동으로 준비합니다. 사용자는 별도 PowerShell 명령이나 시작 메뉴 작업을 수행할 필요가 없습니다. 패키지와 모델을 내려받으므로 최초 설치에는 인터넷 연결이 필요하고 시간이 걸릴 수 있습니다.
 

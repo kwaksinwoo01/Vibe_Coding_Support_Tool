@@ -132,3 +132,41 @@ def test_paddleocr_missing_is_a_safe_optional_fallback() -> None:
 
     assert result.text == ""
     assert result.warnings == ["paddleocr_missing"]
+
+
+def test_paddleocr_respects_page_batch_size(tmp_path: Path) -> None:
+    completed = subprocess.CompletedProcess(["python.exe"], 0, "", "")
+    calls: list[tuple[str, ...]] = []
+
+    def run(arguments, *, timeout_seconds):
+        output_path = Path(arguments[arguments.index("--output") + 1])
+        image_arguments = tuple(
+            arguments[arguments.index("--cpu-threads") + 2 :]
+        )
+        calls.append(image_arguments)
+        output_path.write_text(
+            '{"status":"ok","text":"batch text"}',
+            encoding="utf-8-sig",
+        )
+        return completed
+
+    pages = tuple(tmp_path / f"page-{index}.png" for index in range(5))
+    with (
+        patch(
+            "renamer_document_classifier.extractors.find_paddleocr_python",
+            return_value=Path("python.exe"),
+        ),
+        patch(
+            "renamer_document_classifier.extractors.find_paddleocr_runner",
+            return_value=Path("paddleocr_runner.py"),
+        ),
+        patch("renamer_document_classifier.extractors._run", side_effect=run),
+    ):
+        result = ocr_images_with_paddleocr(
+            pages,
+            ExtractionLimits(),
+            batch_size=2,
+        )
+
+    assert [len(batch) for batch in calls] == [2, 2, 1]
+    assert result.text == "batch text\nbatch text\nbatch text"

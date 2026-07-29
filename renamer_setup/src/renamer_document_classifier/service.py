@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, replace
 from pathlib import Path
 import tempfile
 
@@ -23,10 +24,17 @@ from .extractors import (
 )
 from .logging_utils import append_log
 from .names_config import resolve_person_name
+from .ocr_scheduler import (
+    DocumentSlotLease,
+    OcrSchedulerConfig,
+    SchedulerSlotLease,
+    load_scheduler_config,
+)
 
 
-PDF_OCR_PRIMARY_PSM = 3
-PDF_OCR_PARALLEL_PSMS = (6, 11)
+PDF_OCR_STANDARD_DPI = 300
+PDF_OCR_PARALLEL_PSMS = (3, 6, 11)
+PDF_OCR_HIGH_RESOLUTION_DPI = 400
 PDF_OCR_HIGH_RESOLUTION_PSMS = (3, 11)
 
 
@@ -37,36 +45,163 @@ class InspectionResult:
     person_name: str
     correspondent_name: str
     source_path: Path
+    scheduler: OcrSchedulerConfig | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OcrAttempt:
+    label: str
+    extraction: ExtractionResult
+    priority: int
 
 
 def _classify(text: str) -> ClassificationResult:
     return classify_document_text(text)
 
 
-def _apply_ocr_attempt(
-    attempt: ExtractionResult,
+def _classification_weight(classification: ClassificationResult) -> int:
+    if classification.kind is DocumentKind.UNKNOWN:
+        return 0
+    title_match = "title" in classification.reason
+    score = max(classification.quote_score, classification.transaction_score)
+    return (400 if title_match else 200) + score
+
+
+def _arbitrate_ocr_attempts(
+    attempts: tuple[OcrAttempt, ...],
     extraction: ExtractionResult,
     classification: ClassificationResult,
     *,
     original_name: str,
     correspondents: tuple[CorrespondentRule, ...],
 ) -> tuple[ClassificationResult, str]:
-    extraction.extend(attempt)
+    candidates: list[tuple[int, ClassificationResult]] = [(0, classification)]
+    for attempt in sorted(attempts, key=lambda item: item.priority):
+        extraction.extend(attempt.extraction)
+        extraction.methods.append(f"ocr-attempt:{attempt.label}")
+        candidates.append((attempt.priority, _classify(attempt.extraction.text)))
+    if attempts:
+        extraction.methods.append("ocr-arbiter")
 
-    # Classify the latest OCR text on its own first. Otherwise a title found
-    # by a later engine can land beyond the title scan limit after earlier OCR
-    # text and still be missed.
-    attempt_classification = _classify(attempt.text)
-    if attempt_classification.kind is not DocumentKind.UNKNOWN:
-        classification = attempt_classification
+    # Embedded text containing a document title is the most authoritative
+    # signal. Otherwise let independent OCR engines vote, with title matches
+    # weighted above support-only classifications. Completion order never
+    # affects the result because priority is fixed by engine/mode.
+    if (
+        classification.kind is not DocumentKind.UNKNOWN
+        and "title" in classification.reason
+    ):
+        selected = classification
     else:
-        classification = _classify(extraction.text)
+        votes = {DocumentKind.QUOTE: 0, DocumentKind.TRANSACTION: 0}
+        for _, candidate in candidates:
+            if candidate.kind in votes:
+                votes[candidate.kind] += _classification_weight(candidate)
+
+        winning_kind = max(
+            votes,
+            key=lambda kind: (votes[kind], kind is DocumentKind.TRANSACTION),
+        )
+        known = [
+            (priority, candidate)
+            for priority, candidate in candidates
+            if candidate.kind is winning_kind
+        ]
+        if known and votes[winning_kind] > 0:
+            _, selected = max(
+                known,
+                key=lambda item: (
+                    _classification_weight(item[1]),
+                    max(item[1].quote_score, item[1].transaction_score),
+                    -item[0],
+                ),
+            )
+        else:
+            selected = _classify(extraction.text)
 
     correspondent = resolve_correspondent(
         (original_name, extraction.text),
         correspondents,
     )
-    return classification, correspondent
+    return selected, correspondent
+
+
+def _run_standard_ocr_attempts(
+    pages: tuple[Path, ...],
+    limits: ExtractionLimits,
+    scheduler: OcrSchedulerConfig,
+) -> tuple[OcrAttempt, ...]:
+    active = scheduler.normalized()
+    attempt_budget = active.max_attempts_per_document
+    modes = PDF_OCR_PARALLEL_PSMS[: min(3, attempt_budget)]
+    include_paddle = active.gpu_workers > 0 and attempt_budget > len(modes)
+    max_engine_workers = min(
+        2 if include_paddle else 1,
+        active.max_parallel_attempts(
+            dpi=PDF_OCR_STANDARD_DPI,
+            page_count=len(pages),
+        ),
+    )
+
+    def tesseract_group() -> dict[int, ExtractionResult]:
+        return ocr_images_with_tesseract(
+            pages,
+            limits,
+            modes,
+            cpu_slot_factory=lambda: SchedulerSlotLease(
+                "cpu",
+                active.cpu_workers,
+                limits.timeout_seconds,
+            ),
+        )
+
+    def paddle_group() -> ExtractionResult:
+        with SchedulerSlotLease(
+            "gpu",
+            active.gpu_workers,
+            limits.timeout_seconds,
+        ), SchedulerSlotLease(
+            "cpu",
+            active.cpu_workers,
+            limits.timeout_seconds,
+        ):
+            return ocr_images_with_paddleocr(
+                pages,
+                limits,
+                batch_size=active.batch_size,
+                cpu_threads=1,
+            )
+
+    if include_paddle and max_engine_workers > 1:
+        with ThreadPoolExecutor(
+            max_workers=max_engine_workers,
+            thread_name_prefix="ocr-engine",
+        ) as executor:
+            tesseract_future = executor.submit(tesseract_group)
+            paddle_future = executor.submit(paddle_group)
+            tesseract_results = tesseract_future.result()
+            paddle_result = paddle_future.result()
+    else:
+        tesseract_results = tesseract_group()
+        paddle_result = paddle_group() if include_paddle else None
+
+    attempts = [
+        OcrAttempt(
+            label=f"tesseract-psm{mode}-dpi300",
+            extraction=tesseract_results[mode],
+            priority=index,
+        )
+        for index, mode in enumerate(modes)
+    ]
+    if paddle_result is not None:
+        attempts.append(
+            OcrAttempt(
+                label="paddleocr-dpi300",
+                extraction=paddle_result,
+                priority=len(attempts),
+            )
+        )
+    return tuple(attempts)
 
 
 def _extract_pdf_ocr_adaptively(
@@ -76,7 +211,14 @@ def _extract_pdf_ocr_adaptively(
     *,
     original_name: str,
     correspondents: tuple[CorrespondentRule, ...],
+    scheduler: OcrSchedulerConfig | None = None,
 ) -> tuple[ClassificationResult, str]:
+    active_scheduler = (scheduler or load_scheduler_config()).normalized()
+    active_limits = replace(
+        limits,
+        ocr_dpi=PDF_OCR_STANDARD_DPI,
+        ocr_workers=active_scheduler.cpu_workers,
+    )
     classification = _classify(extraction.text)
     correspondent = resolve_correspondent(
         (original_name, extraction.text),
@@ -87,86 +229,70 @@ def _extract_pdf_ocr_adaptively(
         workspace = Path(temp_dir)
         rendered = render_pdf_pages(
             path,
-            limits,
-            workspace / "dpi300",
+            active_limits,
+            workspace / "dpi300-gray",
+            dpi=PDF_OCR_STANDARD_DPI,
+            grayscale=True,
         )
         extraction.extend(rendered.extraction)
 
-        primary_attempt = ocr_images_with_tesseract(
+        standard_attempts = _run_standard_ocr_attempts(
             rendered.pages,
-            limits,
-            (PDF_OCR_PRIMARY_PSM,),
-        )[PDF_OCR_PRIMARY_PSM]
-        classification, correspondent = _apply_ocr_attempt(
-            primary_attempt,
-            extraction,
-            classification,
-            original_name=original_name,
-            correspondents=correspondents,
+            active_limits,
+            active_scheduler,
         )
-        if classification.kind is not DocumentKind.UNKNOWN and (
-            correspondent or not correspondents
-        ):
-            return classification, correspondent
-
-        parallel_attempts = ocr_images_with_tesseract(
-            rendered.pages,
-            limits,
-            PDF_OCR_PARALLEL_PSMS,
-        )
-        for mode in PDF_OCR_PARALLEL_PSMS:
-            classification, correspondent = _apply_ocr_attempt(
-                parallel_attempts[mode],
-                extraction,
-                classification,
-                original_name=original_name,
-                correspondents=correspondents,
-            )
-            if classification.kind is not DocumentKind.UNKNOWN and (
-                correspondent or not correspondents
-            ):
-                return classification, correspondent
-
-        # Preserve the established correspondent search budget: once all three
-        # 300 DPI Tesseract layouts have classified the document, do not start
-        # heavier engines only to search for an unregistered correspondent.
-        if classification.kind is not DocumentKind.UNKNOWN:
-            return classification, correspondent
-
-        paddle_attempt = ocr_images_with_paddleocr(rendered.pages, limits)
-        classification, correspondent = _apply_ocr_attempt(
-            paddle_attempt,
+        classification, correspondent = _arbitrate_ocr_attempts(
+            standard_attempts,
             extraction,
             classification,
             original_name=original_name,
             correspondents=correspondents,
         )
         if classification.kind is not DocumentKind.UNKNOWN:
+            return classification, correspondent
+
+        attempts_used = len(standard_attempts)
+        remaining_attempts = max(
+            0, active_scheduler.max_attempts_per_document - attempts_used
+        )
+        high_modes = PDF_OCR_HIGH_RESOLUTION_PSMS[:remaining_attempts]
+        if not high_modes:
+            extraction.warnings.append("ocr_attempt_budget_exhausted")
             return classification, correspondent
 
         high_resolution = render_pdf_pages(
             path,
-            limits,
+            active_limits,
             workspace / "dpi400-gray",
-            dpi=400,
+            dpi=PDF_OCR_HIGH_RESOLUTION_DPI,
             grayscale=True,
         )
         extraction.extend(high_resolution.extraction)
         high_resolution_attempts = ocr_images_with_tesseract(
             high_resolution.pages,
-            limits,
-            PDF_OCR_HIGH_RESOLUTION_PSMS,
+            active_limits,
+            high_modes,
+            cpu_slot_factory=lambda: SchedulerSlotLease(
+                "cpu",
+                active_scheduler.cpu_workers,
+                active_limits.timeout_seconds,
+            ),
         )
-        for mode in PDF_OCR_HIGH_RESOLUTION_PSMS:
-            classification, correspondent = _apply_ocr_attempt(
-                high_resolution_attempts[mode],
-                extraction,
-                classification,
-                original_name=original_name,
-                correspondents=correspondents,
+        high_attempts = tuple(
+            OcrAttempt(
+                label=f"tesseract-psm{mode}-dpi400",
+                extraction=high_resolution_attempts[mode],
+                priority=attempts_used + index,
             )
-            if classification.kind is not DocumentKind.UNKNOWN:
-                return classification, correspondent
+            for index, mode in enumerate(high_modes)
+        )
+        classification, correspondent = _arbitrate_ocr_attempts(
+            high_attempts,
+            extraction,
+            classification,
+            original_name=original_name,
+            correspondents=correspondents,
+        )
 
     return classification, correspondent
 
@@ -176,6 +302,7 @@ def inspect_document(
     *,
     original_name: str | None = None,
     limits: ExtractionLimits | None = None,
+    scheduler: OcrSchedulerConfig | None = None,
 ) -> InspectionResult:
     path = Path(source_path).expanduser().resolve()
     active_limits = limits or ExtractionLimits()
@@ -187,6 +314,7 @@ def inspect_document(
         (active_original_name, extraction.text),
         correspondents,
     )
+    used_scheduler: OcrSchedulerConfig | None = None
 
     extension = path.suffix.casefold()
     needs_pdf_ocr = (
@@ -197,13 +325,20 @@ def inspect_document(
         )
     )
     if needs_pdf_ocr:
-        classification, correspondent_name = _extract_pdf_ocr_adaptively(
-            path,
-            extraction,
-            active_limits,
-            original_name=active_original_name,
-            correspondents=correspondents,
-        )
+        active_scheduler = (scheduler or load_scheduler_config()).normalized()
+        used_scheduler = active_scheduler
+        with DocumentSlotLease(
+            active_scheduler.max_documents_in_flight,
+            active_limits.timeout_seconds,
+        ):
+            classification, correspondent_name = _extract_pdf_ocr_adaptively(
+                path,
+                extraction,
+                active_limits,
+                original_name=active_original_name,
+                correspondents=correspondents,
+                scheduler=active_scheduler,
+            )
     elif classification.kind is DocumentKind.UNKNOWN:
         if extension in SPREADSHEET_EXTENSIONS:
             extraction.extend(extract_spreadsheet_fallback(path, active_limits))
@@ -220,6 +355,7 @@ def inspect_document(
         person_name=person_name,
         correspondent_name=correspondent_name,
         source_path=path,
+        scheduler=used_scheduler,
     )
 
     try:
@@ -237,6 +373,7 @@ def inspect_document(
 def write_inspection_log(result: InspectionResult) -> None:
     classification = result.classification
     extraction = result.extraction
+    scheduler = result.scheduler
     append_log(
         [
             f"path={result.source_path}",
@@ -253,6 +390,15 @@ def write_inspection_log(result: InspectionResult) -> None:
             f"person={result.person_name}",
             f"correspondent={result.correspondent_name or 'none'}",
             f"result={classification.kind.value}",
+            f"ocr.scheduler.cpu_workers={scheduler.cpu_workers if scheduler else 'not_used'}",
+            f"ocr.scheduler.gpu_workers={scheduler.gpu_workers if scheduler else 'not_used'}",
+            "ocr.scheduler.max_documents_in_flight="
+            f"{scheduler.max_documents_in_flight if scheduler else 'not_used'}",
+            "ocr.scheduler.max_attempts_per_document="
+            f"{scheduler.max_attempts_per_document if scheduler else 'not_used'}",
+            "ocr.scheduler.memory_budget_mb="
+            f"{scheduler.memory_budget_mb if scheduler else 'not_used'}",
+            f"ocr.scheduler.batch_size={scheduler.batch_size if scheduler else 'not_used'}",
             f"warnings={' | '.join(extraction.warnings) or 'none'}",
         ]
     )
