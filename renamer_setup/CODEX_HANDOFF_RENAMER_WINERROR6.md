@@ -144,6 +144,14 @@ with one internal CPU thread. `gpu_workers` names the separately budgeted
 auxiliary-engine lane and setting it to zero disables PaddleOCR. Other OCR engines and layout
 analyzers are extension points only and are not reported as active engines.
 
+Scheduler profile version 2 stores each tunable as `auto` by default. Runtime
+resolution uses about 80% of logical processors, 25% of physical RAM, and a
+CPU/memory-constrained document limit of at most four. Individual numeric
+values remain manual overrides. Legacy numeric files are migrated per key:
+values equal to the old generated defaults become `auto`, while changed values
+remain numeric. The original is retained once as
+`ocr_scheduler.ini.legacy-default.bak`.
+
 This work must remain uncommitted and at version 7.4.1 until the user builds,
 installs, and verifies it in actual ReNamer with multiple PDFs.
 

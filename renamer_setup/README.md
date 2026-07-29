@@ -234,20 +234,29 @@ PDF OCR은 다음 고정 파이프라인을 사용합니다.
 
 ```ini
 [ocr.scheduler]
-cpu_workers = 8
-gpu_workers = 1
-max_documents_in_flight = 2
-max_attempts_per_document = 6
-memory_budget_mb = 2048
-batch_size = 2
+profile_version = 2
+detected_logical_processors = 12
+detected_total_memory_mb = 49152
+cpu_workers = auto
+gpu_workers = auto
+max_documents_in_flight = auto
+max_attempts_per_document = auto
+memory_budget_mb = auto
+batch_size = auto
 ```
 
-- `cpu_workers`: 모든 classifier 프로세스가 공유하는 Tesseract 프로세스 슬롯 수입니다. 기본값은 논리 CPU 수의 절반이며 2~8 범위에서 자동 결정됩니다.
+`auto` 항목은 실행 PC의 논리 프로세서 수와 물리 RAM을 읽어 매번 실제 권장값으로 변환합니다. 예를 들어 12 논리 프로세서와 약 48GB RAM에서는 `cpu_workers=10`, `max_documents_in_flight=3`, `memory_budget_mb=12288`이 적용됩니다. 특정 항목만 직접 조정하려면 해당 `auto`를 숫자로 바꾸면 되며 나머지 항목은 계속 자동 계산됩니다. PC의 CPU나 RAM을 교체해도 `auto` 항목은 다음 실행부터 새 사양을 반영합니다.
+
+`classifier.exe health`는 감지한 `SYSTEM_LOGICAL_PROCESSORS`, `SYSTEM_TOTAL_MEMORY_MB`, `OCR_SCHEDULER_PROFILE=AUTO|MIXED|MANUAL`과 실제 적용된 모든 스케줄러 값을 출력합니다.
+
+이전 버전의 숫자형 설정은 업그레이드 시 항목별로 비교합니다. 옛 기본값과 같은 항목만 `auto`로 전환하고, 사용자가 다르게 조정한 숫자는 해당 항목의 수동 재정의로 보존합니다. 마이그레이션 전 원본은 `ocr_scheduler.ini.legacy-default.bak`으로 한 번 보관합니다.
+
+- `cpu_workers`: 모든 classifier 프로세스가 공유하는 Tesseract 프로세스 슬롯 수입니다. 자동값은 논리 프로세서의 약 80%이며 최소 1, 최대 32입니다.
 - `gpu_workers`: PaddleOCR 보조 엔진 슬롯 수입니다. `0`이면 PaddleOCR을 사용하지 않습니다. 현재 배포 ONNX 런타임은 CPU 고정이므로 보조 엔진 슬롯과 CPU 슬롯을 함께 점유하고 내부 스레드를 1개로 제한합니다.
-- `max_documents_in_flight`: 동시에 OCR 단계에 들어갈 PDF 수입니다.
+- `max_documents_in_flight`: 동시에 OCR 단계에 들어갈 PDF 수입니다. 자동값은 CPU와 메모리 용량을 함께 고려하며 최대 4입니다.
 - `max_attempts_per_document`: 한 PDF에서 허용할 엔진·PSM 시도 수입니다. 기본값 6은 300 DPI 네 번과 400 DPI 두 번을 허용합니다.
-- `memory_budget_mb`: 전체 OCR 메모리 예산입니다. DPI, 페이지 수, 동시 문서 수를 기준으로 한 문서 내부 동시 엔진 수를 줄입니다.
-- `batch_size`: 한 PaddleOCR 프로세스에 전달할 페이지 수입니다.
+- `memory_budget_mb`: 전체 OCR 메모리 예산입니다. 자동값은 물리 RAM의 25%이며 1GB~16GB 범위입니다. DPI, 페이지 수, 동시 문서 수를 기준으로 한 문서 내부 동시 엔진 수를 줄입니다.
+- `batch_size`: 한 PaddleOCR 프로세스에 전달할 페이지 수입니다. RAM 8GB 미만은 1, 그 이상은 2입니다.
 
 문서, CPU, 보조 엔진 슬롯은 `%LOCALAPPDATA%\ReNamerDocumentClassifier\temp\ocr-scheduler`의 프로세스 간 잠금으로 공유됩니다. 따라서 여러 PDF가 각각 별도 `classifier.exe`로 실행되어도 설정값보다 많은 Tesseract/PaddleOCR 작업이 동시에 실행되지 않습니다.
 

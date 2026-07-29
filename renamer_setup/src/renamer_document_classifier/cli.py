@@ -24,8 +24,10 @@ from .extractors import ExtractionLimits, health_report
 from .logging_utils import clear_log
 from .runtime_paths import installation_root, log_path
 from .ocr_scheduler import (
+    detect_system_capacity,
     ensure_scheduler_file,
     load_scheduler_config,
+    scheduler_profile_mode,
     scheduler_path,
 )
 from .service import inspect_document
@@ -69,10 +71,19 @@ def _split_names(value: str) -> list[str]:
 def _configure_non_interactive(default_name: str, known_names: str) -> int:
     config = save_user_config(default_name, _split_names(known_names))
     ensure_correspondent_file()
-    ensure_scheduler_file()
+    active_scheduler_path = ensure_scheduler_file()
+    scheduler = load_scheduler_config(active_scheduler_path)
     print("STATUS=OK")
     print(f"DEFAULT_NAME={config.default_name}")
     print(f"KNOWN_NAMES={','.join(config.known_names)}")
+    print(f"OCR_SCHEDULER_CONFIG={active_scheduler_path}")
+    print(f"OCR_SCHEDULER_CPU_WORKERS={scheduler.cpu_workers}")
+    print(f"OCR_SCHEDULER_GPU_WORKERS={scheduler.gpu_workers}")
+    print(
+        "OCR_SCHEDULER_MAX_DOCUMENTS_IN_FLIGHT="
+        f"{scheduler.max_documents_in_flight}"
+    )
+    print(f"OCR_SCHEDULER_MEMORY_BUDGET_MB={scheduler.memory_budget_mb}")
     return 0
 
 
@@ -256,8 +267,12 @@ def main(argv: list[str] | None = None) -> int:
         print("STATUS=OK")
         for key, value in health_report().items():
             print(f"{key.upper()}={value}")
+        system = detect_system_capacity()
         scheduler = load_scheduler_config()
+        print(f"SYSTEM_LOGICAL_PROCESSORS={system.logical_processors}")
+        print(f"SYSTEM_TOTAL_MEMORY_MB={system.total_memory_mb}")
         print(f"OCR_SCHEDULER_CONFIG={scheduler_path()}")
+        print(f"OCR_SCHEDULER_PROFILE={scheduler_profile_mode()}")
         print(f"OCR_SCHEDULER_CPU_WORKERS={scheduler.cpu_workers}")
         print(f"OCR_SCHEDULER_GPU_WORKERS={scheduler.gpu_workers}")
         print(
