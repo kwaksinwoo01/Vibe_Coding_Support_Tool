@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Protocol
 from dataclasses import dataclass
-from typing import Any
 
 from .models import Severity, TemplateSnapshot, ValidationIssue
 
@@ -77,7 +76,10 @@ class ListBindingValidator:
     name: str = "list-binding"
 
     def validate(self, snapshot: TemplateSnapshot) -> Iterable[ValidationIssue]:
-        template_names = set(snapshot.list_templates)
+        template_names = {
+            str(template.get("name", ""))
+            for template in snapshot.list_templates.values()
+        }
         for style in snapshot.styles.values():
             template_name = style.list_binding.get("template_name")
             level = style.list_binding.get("level")
