@@ -70,6 +70,7 @@ function Test-PythonExecutable {
 function Add-PythonCandidate {
     param(
         [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
         [System.Collections.Generic.List[string]]$Candidates,
 
         [AllowNull()]
