@@ -7,8 +7,8 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from word_editor.config import EditorConfig
+from word_editor.infrastructure.robust_word_com import RobustWordComGateway
 from word_editor.infrastructure.snapshot_store import SnapshotStore
-from word_editor.infrastructure.word_com import WordComGateway
 from word_editor.services.editor_service import EditorService
 from word_editor.ui.main_window import MainWindow
 
@@ -27,7 +27,7 @@ def build_service(normal_path: Path | None = None) -> EditorService:
     config.ensure_directories()
     return EditorService(
         config=config,
-        gateway=WordComGateway(
+        gateway=RobustWordComGateway(
             normal_path=config.normal_path,
             backup_directory=config.backup_directory,
         ),
