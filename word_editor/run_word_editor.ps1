@@ -66,6 +66,10 @@ function Get-PythonCandidates {
 
     Add-UniqueCandidate `
         -Candidates $candidates `
+        -Candidate (Join-Path $projectRoot '.venv\Scripts\python.exe')
+
+    Add-UniqueCandidate `
+        -Candidates $candidates `
         -Candidate (Join-Path $repositoryRoot '.venv\Scripts\python.exe')
 
     foreach ($commandName in @('python.exe', 'python3.exe', 'python', 'python3')) {
@@ -153,19 +157,46 @@ function Test-PythonCandidate {
 
     $probe = @'
 import json
+import os
 import struct
 import sys
 import winreg
 
 registered = False
 clsid = ""
+local_server = ""
+server_path = ""
 error = ""
 try:
     with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"Word.Application\CLSID") as key:
         clsid = str(winreg.QueryValueEx(key, None)[0])
-        registered = bool(clsid)
 except OSError as exc:
     error = str(exc)
+
+if clsid:
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CLASSES_ROOT,
+            rf"CLSID\{clsid}\LocalServer32",
+        ) as key:
+            local_server = str(winreg.QueryValueEx(key, None)[0]).strip()
+    except OSError as exc:
+        error = str(exc)
+
+if local_server:
+    if local_server.startswith('"'):
+        closing_quote = local_server.find('"', 1)
+        if closing_quote > 1:
+            server_path = local_server[1:closing_quote]
+    else:
+        executable_end = local_server.lower().find(".exe")
+        if executable_end >= 0:
+            server_path = local_server[:executable_end + 4]
+    server_path = os.path.expandvars(server_path)
+
+registered = bool(clsid and server_path and os.path.isfile(server_path))
+if clsid and server_path and not registered:
+    error = f"Word COM server file does not exist: {server_path}"
 
 print(json.dumps({
     "version": "{}.{}.{}".format(*sys.version_info[:3]),
@@ -173,12 +204,17 @@ print(json.dumps({
     "bits": struct.calcsize("P") * 8,
     "word_com_registered": registered,
     "word_clsid": clsid,
+    "word_local_server": local_server,
+    "word_server_path": server_path,
     "registry_error": error,
 }, ensure_ascii=False))
 '@
 
     try {
-        $output = @(& $Candidate -c $probe 2>&1)
+        # Windows PowerShell 5.1 rewrites embedded quotes in native `-c`
+        # arguments. Send the multi-line probe through stdin so Python receives
+        # the source exactly as written.
+        $output = @($probe | & $Candidate - 2>&1)
         $exitCode = $LASTEXITCODE
         if ($exitCode -ne 0) {
             $result.Reason = (
@@ -218,10 +254,26 @@ print(json.dumps({
         }
 
         if (-not $result.WordComRegistered) {
-            $result.Reason = (
-                'Python {0}비트 레지스트리 뷰에서 Word.Application COM을 찾지 못했습니다. ' +
-                'Office와 Python 비트 수 불일치 또는 Word COM 등록 손상 가능성이 있습니다.'
-            ) -f $result.Bits
+            $serverPath = [string]$info.word_server_path
+            if (
+                -not [string]::IsNullOrWhiteSpace($serverPath) -and
+                -not [System.IO.File]::Exists($serverPath)
+            ) {
+                $registryError = (
+                    'Word COM 서버 파일이 없습니다: {0}. ' +
+                    'Microsoft 365/Office 온라인 복구 또는 Word 재설치가 필요합니다.'
+                ) -f $serverPath
+            }
+            else {
+                $registryError = [string]$info.registry_error
+            }
+            if ([string]::IsNullOrWhiteSpace($registryError)) {
+                $registryError = (
+                    'Python {0}비트 레지스트리 뷰에서 완전한 Word.Application COM 등록을 ' +
+                    '찾지 못했습니다.'
+                ) -f $result.Bits
+            }
+            $result.Reason = $registryError
             return [pscustomobject]$result
         }
 
