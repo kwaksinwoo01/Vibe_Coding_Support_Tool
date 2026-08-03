@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Protocol
+from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Protocol
 
 from .models import Severity, TemplateSnapshot, ValidationIssue
 
