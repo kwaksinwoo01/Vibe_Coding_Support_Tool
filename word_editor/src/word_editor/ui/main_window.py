@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -30,11 +31,18 @@ from PySide6.QtWidgets import (
 )
 
 from word_editor.domain.models import ConflictChoice, MergePlan, Severity
+from word_editor.domain.property_policy import (
+    common_property_names,
+    common_property_policy,
+)
 from word_editor.services.editor_service import EditorService
+
+MIXED_VALUE_TEXT = "⟪혼합값: 변경할 값을 입력⟫"
+WORD_FILE_FILTER = "Word files (*.docx *.docm *.dotx *.dotm)"
 
 
 class _EventBridge(QObject):
-    normal_changed = Signal()
+    target_changed = Signal()
 
 
 class MainWindow(QMainWindow):
@@ -44,37 +52,52 @@ class MainWindow(QMainWindow):
         self._loading_properties = False
         self._merge_plan: MergePlan | None = None
         self._event_bridge = _EventBridge()
-        self._event_bridge.normal_changed.connect(self._on_external_change)
+        self._event_bridge.target_changed.connect(self._on_external_change)
         self._apply_timer = QTimer(self)
         self._apply_timer.setSingleShot(True)
         self._apply_timer.setInterval(800)
-        self._apply_timer.timeout.connect(self.apply_current_style)
+        self._apply_timer.timeout.connect(self.apply_selected_styles)
 
-        self.setWindowTitle("Word Normal.dotm Style Editor")
-        self.resize(1500, 900)
+        self.setWindowTitle("Word Style Editor")
+        self.resize(1600, 920)
         self.setStatusBar(QStatusBar(self))
         self._build_ui()
         self._load_initial_state()
-        self.service.start_watching(self._event_bridge.normal_changed.emit)
+        self.service.start_watching(self._event_bridge.target_changed.emit)
 
     def _build_ui(self) -> None:
         root = QWidget(self)
         root_layout = QVBoxLayout(root)
 
+        target_bar = QHBoxLayout()
+        target_bar.addWidget(QLabel("현재 편집 대상:"))
+        self.target_label = QLabel("")
+        self.target_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        target_bar.addWidget(self.target_label, 1)
+        self.open_target_button = QPushButton("Word 파일 열기")
+        self.open_target_button.clicked.connect(self.open_edit_target)
+        target_bar.addWidget(self.open_target_button)
+        self.normal_target_button = QPushButton("Normal.dotm으로 전환")
+        self.normal_target_button.clicked.connect(self.use_normal_target)
+        target_bar.addWidget(self.normal_target_button)
+        root_layout.addLayout(target_bar)
+
         toolbar = QHBoxLayout()
         self.refresh_button = QPushButton("새로고침")
         self.refresh_button.clicked.connect(self.refresh_snapshot)
-        self.apply_button = QPushButton("현재 스타일 적용")
-        self.apply_button.clicked.connect(self.apply_current_style)
+        self.apply_button = QPushButton("선택 스타일 적용")
+        self.apply_button.clicked.connect(self.apply_selected_styles)
         self.export_button = QPushButton("전체 스냅샷 내보내기")
         self.export_button.clicked.connect(self.export_snapshot)
         self.compare_button = QPushButton("Word 문서와 비교")
         self.compare_button.clicked.connect(self.compare_document)
         self.inject_button = QPushButton("선택 스타일을 문서에 주입")
-        self.inject_button.clicked.connect(self.inject_selected_style)
-        self.update_document_button = QPushButton("문서 스타일 전체 업데이트")
+        self.inject_button.clicked.connect(self.inject_selected_styles)
+        self.update_document_button = QPushButton("현재 대상의 전체 스타일 주입")
         self.update_document_button.clicked.connect(self.update_document_styles)
-        self.live_sync = QCheckBox("편집 후 자동 적용")
+        self.live_sync = QCheckBox("단일 스타일 편집 후 자동 적용")
         self.live_sync.setChecked(True)
         for widget in (
             self.refresh_button,
@@ -94,16 +117,19 @@ class MainWindow(QMainWindow):
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
-        left_layout.addWidget(QLabel("Normal.dotm의 모든 스타일"))
+        self.style_list_label = QLabel("모든 스타일")
+        left_layout.addWidget(self.style_list_label)
         self.filter_edit = QLineEdit()
-        self.filter_edit.setPlaceholderText("스타일 이름 필터")
+        self.filter_edit.setPlaceholderText("로컬 이름 또는 원래 이름 필터")
         self.filter_edit.textChanged.connect(self._filter_styles)
         left_layout.addWidget(self.filter_edit)
         self.style_list = QListWidget()
         self.style_list.setSelectionMode(
-            QAbstractItemView.SelectionMode.SingleSelection
+            QAbstractItemView.SelectionMode.ExtendedSelection
         )
-        self.style_list.currentTextChanged.connect(self._load_selected_style)
+        self.style_list.itemSelectionChanged.connect(
+            self._load_selected_styles
+        )
         left_layout.addWidget(self.style_list, 1)
         splitter.addWidget(left)
 
@@ -111,18 +137,27 @@ class MainWindow(QMainWindow):
         center_layout = QVBoxLayout(center)
         self.style_title = QLabel("스타일을 선택하십시오")
         center_layout.addWidget(self.style_title)
-        self.property_table = QTableWidget(0, 3)
+        self.style_identity = QLabel("")
+        self.style_identity.setWordWrap(True)
+        self.style_identity.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        center_layout.addWidget(self.style_identity)
+        self.property_table = QTableWidget(0, 4)
         self.property_table.setHorizontalHeaderLabels(
-            ["속성", "현재 Normal.dotm", "편집값"]
+            ["속성", "편집 상태", "현재 값", "편집값"]
         )
         self.property_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
         )
         self.property_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
+            1, QHeaderView.ResizeMode.ResizeToContents
         )
         self.property_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Stretch
+        )
+        self.property_table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.Stretch
         )
         self.property_table.itemChanged.connect(self._property_edited)
         center_layout.addWidget(self.property_table, 1)
@@ -144,18 +179,18 @@ class MainWindow(QMainWindow):
         merge_layout.addWidget(self.merge_summary)
         self.merge_table = QTableWidget(0, 6)
         self.merge_table.setHorizontalHeaderLabels(
-            ["스타일", "속성", "기준", "Normal.dotm", "문서", "선택"]
+            ["스타일", "속성", "기준", "현재 대상", "비교 문서", "선택"]
         )
         self.merge_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
         )
         merge_layout.addWidget(self.merge_table, 1)
-        self.apply_merge_button = QPushButton("선택한 병합을 Normal.dotm에 적용")
+        self.apply_merge_button = QPushButton("선택한 병합을 현재 대상에 적용")
         self.apply_merge_button.clicked.connect(self.apply_merge)
         merge_layout.addWidget(self.apply_merge_button)
         self.tabs.addTab(merge_tab, "Diff / 병합")
         splitter.addWidget(self.tabs)
-        splitter.setSizes([280, 650, 570])
+        splitter.setSizes([330, 720, 550])
 
         self.setCentralWidget(root)
 
@@ -167,69 +202,215 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, QApplication.instance().quit)
             return
         self._populate_styles(snapshot.styles)
+        self._update_target_ui()
         self._show_validation()
         self.statusBar().showMessage(f"로드 완료: {snapshot.source_path}")
 
-    def _populate_styles(self, styles: dict[str, Any]) -> None:
-        selected = self.style_list.currentItem()
-        selected_name = selected.text() if selected else ""
+    def _update_target_ui(self) -> None:
+        target = self.service.target_path
+        self.target_label.setText(str(target))
+        self.style_list_label.setText(f"{target.name}의 모든 스타일")
+        self.normal_target_button.setEnabled(not self.service.is_normal_target)
+        self.setWindowTitle(f"Word Style Editor — {target.name}")
+
+    def open_edit_target(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "편집할 Word 문서 또는 템플릿",
+            str(self.service.target_path.parent),
+            f"{WORD_FILE_FILTER};;All files (*)",
+        )
+        if not path:
+            return
+        self._switch_target(Path(path))
+
+    def use_normal_target(self) -> None:
+        self._switch_target(self.service.config.normal_path)
+
+    def _switch_target(self, path: Path) -> None:
+        self._apply_timer.stop()
+        try:
+            snapshot = self.service.select_target(path)
+        except Exception as exc:
+            QMessageBox.critical(self, "편집 대상 열기 실패", str(exc))
+            return
+        self._merge_plan = None
+        self.merge_table.setRowCount(0)
+        self.merge_summary.setText("비교한 문서가 없습니다.")
+        self._populate_styles(snapshot.styles)
+        self._update_target_ui()
+        self._show_validation()
+        self.statusBar().showMessage(
+            f"편집 대상 전환 완료: {snapshot.source_path}",
+            5000,
+        )
+
+    def _selected_style_names(self) -> list[str]:
+        return [item.text() for item in self.style_list.selectedItems()]
+
+    def _populate_styles(
+        self,
+        styles: dict[str, Any],
+        selected_names: list[str] | None = None,
+    ) -> None:
+        preserved = selected_names or self._selected_style_names()
         self.style_list.blockSignals(True)
         self.style_list.clear()
         for name in sorted(styles, key=str.casefold):
-            item = QListWidgetItem(name)
             style = styles[name]
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, style.original_name)
             item.setToolTip(
+                f"로컬 이름={style.local_name}\n"
+                f"원래 이름={style.original_name or '(확인 불가)'}\n"
+                f"BuiltIn ID={style.built_in_id}\n"
                 f"Type={style.style_type}, BuiltIn={style.built_in}, "
                 f"InUse={style.in_use}"
             )
             self.style_list.addItem(item)
+        for name in preserved:
+            for item in self.style_list.findItems(
+                name,
+                Qt.MatchFlag.MatchExactly,
+            ):
+                item.setSelected(True)
         self.style_list.blockSignals(False)
         self._filter_styles(self.filter_edit.text())
-        matches = self.style_list.findItems(
-            selected_name,
-            Qt.MatchFlag.MatchExactly,
-        )
-        if matches:
-            self.style_list.setCurrentItem(matches[0])
-        elif self.style_list.count():
+        if not self.style_list.selectedItems() and self.style_list.count():
             self.style_list.setCurrentRow(0)
+        else:
+            self._load_selected_styles()
 
     def _filter_styles(self, value: str) -> None:
         needle = value.strip().casefold()
         for index in range(self.style_list.count()):
             item = self.style_list.item(index)
-            item.setHidden(bool(needle and needle not in item.text().casefold()))
+            original_name = str(
+                item.data(Qt.ItemDataRole.UserRole) or ""
+            ).casefold()
+            haystack = f"{item.text().casefold()} {original_name}"
+            item.setHidden(bool(needle and needle not in haystack))
 
-    def _load_selected_style(self, style_name: str) -> None:
+    @staticmethod
+    def _make_read_only(item: QTableWidgetItem) -> None:
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        item.setBackground(QColor(238, 238, 238))
+
+    def _append_row(
+        self,
+        property_name: str,
+        state: str,
+        current_text: str,
+        edit_text: str,
+        editable: bool,
+        row_data: dict[str, Any],
+        tooltip: str = "",
+    ) -> None:
+        row = self.property_table.rowCount()
+        self.property_table.insertRow(row)
+        name_item = QTableWidgetItem(property_name)
+        state_item = QTableWidgetItem(state)
+        current_item = QTableWidgetItem(current_text)
+        edit_item = QTableWidgetItem(edit_text)
+        for item in (name_item, state_item, current_item):
+            self._make_read_only(item)
+        if not editable:
+            self._make_read_only(edit_item)
+        if tooltip:
+            for item in (name_item, state_item, current_item, edit_item):
+                item.setToolTip(tooltip)
+        edit_item.setData(Qt.ItemDataRole.UserRole, row_data)
+        self.property_table.setItem(row, 0, name_item)
+        self.property_table.setItem(row, 1, state_item)
+        self.property_table.setItem(row, 2, current_item)
+        self.property_table.setItem(row, 3, edit_item)
+
+    def _load_selected_styles(self) -> None:
         snapshot = self.service.current
-        if snapshot is None or not style_name:
+        selected_names = self._selected_style_names()
+        if snapshot is None or not selected_names:
+            self.style_title.setText("스타일을 선택하십시오")
+            self.style_identity.setText("")
+            self.property_table.setRowCount(0)
             return
-        style = snapshot.styles.get(style_name)
-        if style is None:
-            return
-        self.style_title.setText(
-            f"{style.name}  ·  {style.style_type}  ·  "
-            f"BuiltIn={style.built_in}"
-        )
+        styles = [snapshot.styles[name] for name in selected_names]
         self._loading_properties = True
         try:
             self.property_table.setRowCount(0)
-            for property_name, value in sorted(style.properties.items()):
-                row = self.property_table.rowCount()
-                self.property_table.insertRow(row)
-                name_item = QTableWidgetItem(property_name)
-                name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                current_item = QTableWidgetItem(self._format_value(value))
-                current_item.setFlags(
-                    current_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+            if len(styles) == 1:
+                style = styles[0]
+                self.style_title.setText(
+                    f"{style.local_name} · {style.style_type} · "
+                    f"BuiltIn={style.built_in}"
                 )
-                edit_item = QTableWidgetItem(self._format_value(value))
-                edit_item.setData(Qt.ItemDataRole.UserRole, value)
-                self.property_table.setItem(row, 0, name_item)
-                self.property_table.setItem(row, 1, current_item)
-                self.property_table.setItem(row, 2, edit_item)
+                self.style_identity.setText(
+                    f"로컬 표시 이름: {style.local_name}\n"
+                    f"Word 원래 이름: {style.original_name or '(확인 불가)'}\n"
+                    f"내장 스타일 ID: "
+                    f"{style.built_in_id if style.built_in_id is not None else '(없음)'}"
+                )
+                metadata = (
+                    ("meta.local_name", style.local_name),
+                    ("meta.original_name", style.original_name),
+                    ("meta.built_in_id", style.built_in_id),
+                    ("meta.style_type", style.style_type),
+                    ("meta.built_in", style.built_in),
+                    ("meta.in_use", style.in_use),
+                )
+                for name, value in metadata:
+                    text = self._format_value(value)
+                    self._append_row(
+                        name,
+                        "읽기 전용 메타데이터",
+                        text,
+                        text,
+                        False,
+                        {"metadata": True},
+                    )
+            else:
+                self.style_title.setText(f"스타일 {len(styles)}개 선택")
+                self.style_identity.setText(
+                    "선택한 모든 스타일에 공통으로 존재하는 속성만 표시합니다. "
+                    "혼합값은 새 값을 입력한 경우에만 일괄 변경됩니다."
+                )
+
+            for property_name in common_property_names(styles):
+                values = [style.properties.get(property_name) for style in styles]
+                first = values[0]
+                same = all(value == first for value in values[1:])
+                policy = common_property_policy(styles, property_name)
+                current_text = (
+                    self._format_value(first)
+                    if same
+                    else f"혼합값 ({len({self._stable_value(v) for v in values})}종)"
+                )
+                edit_text = current_text if same else MIXED_VALUE_TEXT
+                state = "편집 가능" if policy.editable else "읽기 전용"
+                self._append_row(
+                    property_name,
+                    state,
+                    current_text,
+                    edit_text,
+                    policy.editable,
+                    {
+                        "metadata": False,
+                        "representative": first,
+                        "initial_text": edit_text,
+                        "mixed": not same,
+                    },
+                    tooltip=policy.reason,
+                )
         finally:
             self._loading_properties = False
+        self.apply_button.setText(
+            "선택 스타일 일괄 적용"
+            if len(styles) > 1
+            else "선택 스타일 적용"
+        )
+
+    @staticmethod
+    def _stable_value(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
     @staticmethod
     def _format_value(value: Any) -> str:
@@ -256,51 +437,77 @@ class MainWindow(QMainWindow):
             return text
 
     def _property_edited(self, item: QTableWidgetItem) -> None:
-        if self._loading_properties or item.column() != 2:
+        if self._loading_properties or item.column() != 3:
             return
-        if self.live_sync.isChecked():
+        selected_count = len(self._selected_style_names())
+        if self.live_sync.isChecked() and selected_count == 1:
             self._apply_timer.start()
+        elif selected_count > 1:
+            self.statusBar().showMessage(
+                "다중 선택 편집은 안전을 위해 '선택 스타일 일괄 적용'을 누르십시오.",
+                5000,
+            )
 
-    def _collect_updates(self) -> dict[str, Any]:
+    def _collect_common_updates(self) -> dict[str, Any]:
         updates: dict[str, Any] = {}
         for row in range(self.property_table.rowCount()):
             property_name = self.property_table.item(row, 0).text()
-            edit_item = self.property_table.item(row, 2)
-            original = edit_item.data(Qt.ItemDataRole.UserRole)
-            parsed = self._parse_value(edit_item.text(), original)
-            if parsed != original:
-                updates[property_name] = parsed
+            edit_item = self.property_table.item(row, 3)
+            row_data = edit_item.data(Qt.ItemDataRole.UserRole) or {}
+            if row_data.get("metadata"):
+                continue
+            if not (edit_item.flags() & Qt.ItemFlag.ItemIsEditable):
+                continue
+            text = edit_item.text()
+            initial_text = row_data.get("initial_text", "")
+            if text == initial_text:
+                continue
+            if row_data.get("mixed") and text.strip() in {
+                "",
+                MIXED_VALUE_TEXT,
+            }:
+                continue
+            original = row_data.get("representative")
+            updates[property_name] = self._parse_value(text, original)
         return updates
 
-    def apply_current_style(self) -> None:
-        item = self.style_list.currentItem()
-        if item is None:
+    def apply_selected_styles(self) -> None:
+        selected_names = self._selected_style_names()
+        if not selected_names:
             return
-        updates = self._collect_updates()
+        updates = self._collect_common_updates()
         if not updates:
             return
+        updates_by_style = {
+            style_name: dict(updates) for style_name in selected_names
+        }
         try:
-            snapshot = self.service.apply_style_updates(item.text(), updates)
+            snapshot = self.service.apply_style_updates_many(updates_by_style)
         except Exception as exc:
             QMessageBox.critical(self, "적용 실패", str(exc))
             self.refresh_snapshot()
             return
-        self._populate_styles(snapshot.styles)
+        self._populate_styles(snapshot.styles, selected_names)
         self._show_validation()
         self.statusBar().showMessage(
-            f"{item.text()} 속성 {len(updates)}개 적용 완료",
+            f"스타일 {len(selected_names)}개에 공통 속성 {len(updates)}개 적용 완료",
             5000,
         )
 
     def refresh_snapshot(self) -> None:
+        selected_names = self._selected_style_names()
         try:
             snapshot = self.service.refresh()
         except Exception as exc:
             QMessageBox.critical(self, "새로고침 실패", str(exc))
             return
-        self._populate_styles(snapshot.styles)
+        self._populate_styles(snapshot.styles, selected_names)
+        self._update_target_ui()
         self._show_validation()
-        self.statusBar().showMessage("Normal.dotm 새로고침 완료", 4000)
+        self.statusBar().showMessage(
+            f"{self.service.target_display_name} 새로고침 완료",
+            4000,
+        )
 
     def _show_validation(self) -> None:
         issues = self.service.validate_current()
@@ -319,7 +526,7 @@ class MainWindow(QMainWindow):
             ]
             for column, value in enumerate(values):
                 cell = QTableWidgetItem(value)
-                cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self._make_read_only(cell)
                 self.validation_table.setItem(row, column, cell)
         errors = sum(issue.severity is Severity.ERROR for issue in issues)
         self.tabs.setTabText(0, f"검증 ({errors} 오류 / {len(issues)} 전체)")
@@ -342,9 +549,9 @@ class MainWindow(QMainWindow):
     def compare_document(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "비교할 Word 문서 또는 템플릿",
+            "현재 대상과 비교할 Word 문서 또는 템플릿",
             str(Path.home()),
-            "Word files (*.docx *.docm *.dotx *.dotm);;All files (*)",
+            f"{WORD_FILE_FILTER};;All files (*)",
         )
         if not path:
             return
@@ -360,7 +567,7 @@ class MainWindow(QMainWindow):
         self.merge_summary.setText(
             f"자동 병합 스타일 {len(plan.automatic_values)}개 · "
             f"충돌 {len(plan.conflicts)}개 · "
-            f"문서 전용 스타일 {len(plan.added_styles)}개"
+            f"비교 문서 전용 스타일 {len(plan.added_styles)}개"
         )
         self.merge_table.setRowCount(len(plan.conflicts))
         for row, conflict in enumerate(plan.conflicts):
@@ -373,11 +580,11 @@ class MainWindow(QMainWindow):
             ]
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self._make_read_only(item)
                 self.merge_table.setItem(row, column, item)
             chooser = QComboBox()
-            chooser.addItem("Normal.dotm 유지", ConflictChoice.KEEP_NORMAL)
-            chooser.addItem("문서 값 사용", ConflictChoice.USE_DOCUMENT)
+            chooser.addItem("현재 대상 유지", ConflictChoice.KEEP_NORMAL)
+            chooser.addItem("비교 문서 값 사용", ConflictChoice.USE_DOCUMENT)
             chooser.addItem("기준값 사용", ConflictChoice.USE_BASELINE)
             self.merge_table.setCellWidget(row, 5, chooser)
 
@@ -398,21 +605,22 @@ class MainWindow(QMainWindow):
         self._show_validation()
         self.statusBar().showMessage("속성 병합 완료", 5000)
 
-    def inject_selected_style(self) -> None:
-        selected = self.style_list.currentItem()
-        if selected is None:
+    def inject_selected_styles(self) -> None:
+        selected_names = self._selected_style_names()
+        if not selected_names:
             return
         path, _ = QFileDialog.getOpenFileName(
             self,
             "스타일을 주입할 Word 문서",
             str(Path.home()),
-            "Word files (*.docx *.docm *.dotx *.dotm)",
+            WORD_FILE_FILTER,
         )
         if not path:
             return
         try:
             self.service.inject_selected_styles(
-                Path(path), [selected.text()]
+                Path(path),
+                selected_names,
             )
         except Exception as exc:
             QMessageBox.critical(self, "스타일 주입 실패", str(exc))
@@ -420,22 +628,23 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self,
             "주입 완료",
-            f"{selected.text()} → {path}",
+            f"스타일 {len(selected_names)}개 → {path}",
         )
 
     def update_document_styles(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Normal.dotm 스타일로 업데이트할 Word 문서",
+            "현재 대상의 전체 스타일을 주입할 Word 파일",
             str(Path.home()),
-            "Word documents (*.docx *.docm)",
+            WORD_FILE_FILTER,
         )
         if not path:
             return
         answer = QMessageBox.question(
             self,
-            "전체 스타일 업데이트",
-            "같은 이름의 문서 스타일을 Normal.dotm 정의로 덮어씁니다. 계속합니까?",
+            "전체 스타일 주입",
+            f"{self.service.target_display_name}의 같은 이름 스타일로 "
+            "대상 파일을 덮어씁니다. 계속합니까?",
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
@@ -451,7 +660,7 @@ class MainWindow(QMainWindow):
             return
         self.refresh_snapshot()
         self.statusBar().showMessage(
-            "Word 또는 외부 프로그램의 Normal.dotm 변경을 감지했습니다.",
+            f"외부 프로그램의 {self.service.target_display_name} 변경을 감지했습니다.",
             6000,
         )
 
