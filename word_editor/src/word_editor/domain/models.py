@@ -10,16 +10,26 @@ JsonValue = str | int | float | bool | None | list[Any] | dict[str, Any]
 
 @dataclass(slots=True)
 class StyleDefinition:
+    # name remains the stable lookup key used by the current Word locale.
     name: str
     style_type: str
     built_in: bool
     in_use: bool
+    original_name: str = ""
+    built_in_id: int | None = None
     properties: dict[str, JsonValue] = field(default_factory=dict)
     list_binding: dict[str, JsonValue] = field(default_factory=dict)
+
+    @property
+    def local_name(self) -> str:
+        return self.name
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
+            "local_name": self.local_name,
+            "original_name": self.original_name,
+            "built_in_id": self.built_in_id,
             "style_type": self.style_type,
             "built_in": self.built_in,
             "in_use": self.in_use,
@@ -29,8 +39,20 @@ class StyleDefinition:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "StyleDefinition":
+        name = str(value.get("local_name") or value["name"])
+        built_in_id_value = value.get("built_in_id")
+        try:
+            built_in_id = (
+                int(built_in_id_value)
+                if built_in_id_value is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            built_in_id = None
         return cls(
-            name=str(value["name"]),
+            name=name,
+            original_name=str(value.get("original_name") or name),
+            built_in_id=built_in_id,
             style_type=str(value.get("style_type", "Unknown")),
             built_in=bool(value.get("built_in", False)),
             in_use=bool(value.get("in_use", False)),
@@ -51,7 +73,7 @@ class TemplateSnapshot:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "source_path": self.source_path,
             "sha256": self.sha256,
             "captured_at": self.captured_at,
