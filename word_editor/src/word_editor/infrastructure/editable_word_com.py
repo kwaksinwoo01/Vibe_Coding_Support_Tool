@@ -7,7 +7,12 @@ from typing import Any
 
 import pywintypes
 
-from word_editor.domain.models import PatchOperation, StyleDefinition, TemplateSnapshot
+from word_editor.domain.models import (
+    PatchOperation,
+    StyleDefinition,
+    TemplateSnapshot,
+    normalize_word_boolean,
+)
 from word_editor.domain.property_policy import assert_property_editable
 from word_editor.domain.validation import validate_snapshot
 from word_editor.infrastructure.word_com import (
@@ -22,6 +27,13 @@ SUPPORTED_WORD_FILES = frozenset({".docx", ".docm", ".dotx", ".dotm"})
 
 class EditableWordComGateway(WordComGateway):
     """Word gateway that can edit Normal.dotm or another Word file safely."""
+
+    @staticmethod
+    def _word_bool(value: Any) -> bool | int | None:
+        normalized = normalize_word_boolean(value)
+        if normalized is None or isinstance(normalized, (bool, int)):
+            return normalized
+        return None
 
     def _read_style(self, style: Any) -> StyleDefinition:
         definition = super()._read_style(style)
