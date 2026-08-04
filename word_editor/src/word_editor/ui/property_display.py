@@ -3,6 +3,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from word_editor.domain.models import (
+    BOOLEAN_PROPERTY_NAMES,
+    normalize_word_boolean,
+)
+
 PROPERTY_LABELS: dict[str, str] = {
     "meta.local_name": "로컬 표시 이름",
     "meta.original_name": "Word 원래 이름",
@@ -39,6 +44,10 @@ PROPERTY_LABELS: dict[str, str] = {
     "paragraph.keep_with_next": "다음 문단과 함께",
     "paragraph.page_break_before": "앞에서 페이지 나누기",
 }
+
+BOOLEAN_DISPLAY_PROPERTIES = BOOLEAN_PROPERTY_NAMES | frozenset(
+    {"meta.built_in", "meta.in_use"}
+)
 
 STYLE_TYPE_LABELS = {
     "Paragraph": "문단 스타일",
@@ -110,6 +119,10 @@ def style_type_label(value: str) -> str:
 def format_property_value(property_name: str, value: Any) -> str:
     if value is None:
         return "없음"
+    if property_name in BOOLEAN_DISPLAY_PROPERTIES:
+        normalized = normalize_word_boolean(value)
+        if isinstance(normalized, bool):
+            return "예" if normalized else "아니오"
     if isinstance(value, bool):
         return "예" if value else "아니오"
     if property_name == "meta.style_type" and isinstance(value, str):
@@ -130,13 +143,13 @@ def format_property_value(property_name: str, value: Any) -> str:
 
 def parse_property_value(property_name: str, text: str, original: Any) -> Any:
     stripped = text.strip()
-    if isinstance(original, bool):
+    if property_name in BOOLEAN_DISPLAY_PROPERTIES or isinstance(original, bool):
         lowered = stripped.casefold()
-        if lowered in {"예", "참", "true", "yes", "1"}:
+        if lowered in {"예", "참", "true", "yes", "1", "-1"}:
             return True
         if lowered in {"아니오", "거짓", "false", "no", "0"}:
             return False
-    if original is None and stripped in {"", "없음", "null", "none"}:
+    if original is None and stripped.casefold() in {"", "없음", "null", "none"}:
         return None
     enum_values = ENUM_VALUE_LABELS.get(property_name)
     if enum_values is not None:
