@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QThread, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -53,6 +53,31 @@ class _EventBridge(QObject):
     target_changed = Signal()
 
 
+class _ApplyWorker(QObject):
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        service: EditorService,
+        updates_by_style: dict[str, dict[str, Any]],
+    ) -> None:
+        super().__init__()
+        self._service = service
+        self._updates_by_style = updates_by_style
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            snapshot = self._service.apply_style_updates_many(
+                self._updates_by_style
+            )
+        except Exception as exc:
+            self.failed.emit(str(exc))
+            return
+        self.succeeded.emit(snapshot)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, service: EditorService) -> None:
         super().__init__()
@@ -60,6 +85,10 @@ class MainWindow(QMainWindow):
         self._loading_properties = False
         self._loading_style_lists = False
         self._merge_plan: MergePlan | None = None
+        self._apply_thread: QThread | None = None
+        self._apply_worker: _ApplyWorker | None = None
+        self._apply_selection: list[str] = []
+        self._apply_property_count = 0
         self._event_bridge = _EventBridge()
         self._event_bridge.target_changed.connect(self._on_external_change)
         self._apply_timer = QTimer(self)
@@ -604,6 +633,9 @@ class MainWindow(QMainWindow):
         return updates
 
     def apply_selected_styles(self) -> None:
+        self._apply_timer.stop()
+        if self._apply_thread is not None:
+            return
         selected_names = self._selected_style_names()
         if not selected_names:
             return
@@ -613,18 +645,56 @@ class MainWindow(QMainWindow):
         updates_by_style = {
             style_name: dict(updates) for style_name in selected_names
         }
-        try:
-            snapshot = self.service.apply_style_updates_many(updates_by_style)
-        except Exception as exc:
-            QMessageBox.critical(self, "적용 실패", str(exc))
-            self.refresh_snapshot()
-            return
+        self._apply_selection = selected_names
+        self._apply_property_count = len(updates)
+        self.service.stop_watching()
+        self.centralWidget().setEnabled(False)
+        self.statusBar().showMessage(
+            "Word에서 스타일을 적용하고 검증하는 중입니다. 창은 계속 응답합니다."
+        )
+
+        thread = QThread(self)
+        worker = _ApplyWorker(self.service, updates_by_style)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(self._apply_succeeded)
+        worker.failed.connect(self._apply_failed)
+        worker.succeeded.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._apply_finished)
+        self._apply_thread = thread
+        self._apply_worker = worker
+        thread.start()
+
+    @Slot(object)
+    def _apply_succeeded(self, snapshot: Any) -> None:
+        selected_names = self._apply_selection
         self._populate_styles(snapshot.styles, selected_names)
         self._show_validation()
         self.statusBar().showMessage(
-            f"스타일 {len(selected_names)}개에 공통 속성 {len(updates)}개 적용 완료",
+            f"스타일 {len(selected_names)}개에 공통 속성 "
+            f"{self._apply_property_count}개 적용 완료",
             5000,
         )
+
+    @Slot(str)
+    def _apply_failed(self, message: str) -> None:
+        QMessageBox.critical(self, "적용 실패", message)
+        self.statusBar().showMessage(
+            "적용하지 못했습니다. 입력값을 확인한 뒤 다시 시도하거나 새로고침하세요.",
+            8000,
+        )
+
+    @Slot()
+    def _apply_finished(self) -> None:
+        self._apply_thread = None
+        self._apply_worker = None
+        self._apply_selection = []
+        self._apply_property_count = 0
+        self.centralWidget().setEnabled(True)
+        self.service.start_watching(self._event_bridge.target_changed.emit)
 
     def refresh_snapshot(self) -> None:
         selected_names = self._selected_style_names()
@@ -798,7 +868,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "완료", "문서 스타일을 업데이트했습니다.")
 
     def _on_external_change(self) -> None:
-        if self._apply_timer.isActive():
+        if self._apply_timer.isActive() or self._apply_thread is not None:
             return
         self.refresh_snapshot()
         self.statusBar().showMessage(
@@ -807,5 +877,12 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event: Any) -> None:
+        if self._apply_thread is not None:
+            event.ignore()
+            self.statusBar().showMessage(
+                "스타일 적용이 끝난 뒤 프로그램을 닫을 수 있습니다.",
+                5000,
+            )
+            return
         self.service.stop_watching()
         super().closeEvent(event)

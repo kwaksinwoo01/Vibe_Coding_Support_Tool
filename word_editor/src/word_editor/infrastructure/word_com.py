@@ -305,6 +305,19 @@ class WordComGateway:
         )
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def _styles_hash(styles: dict[str, StyleDefinition]) -> str:
+        content = json.dumps(
+            {
+                name: style.to_dict()
+                for name, style in sorted(styles.items())
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
     def _snapshot_document_object(
         self,
         application: Any,
@@ -322,6 +335,7 @@ class WordComGateway:
         list_templates = self._read_list_templates(document)
         snapshot_hash = self._snapshot_hash(styles, list_templates)
         metadata: dict[str, Any] = {}
+        metadata["styles_sha256"] = self._styles_hash(styles)
         try:
             metadata["file_modified_at"] = source_path.stat().st_mtime
         except OSError:

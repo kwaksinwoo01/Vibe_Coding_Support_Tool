@@ -119,11 +119,17 @@ class EditableWordComGateway(WordComGateway):
                     document.Close(SaveChanges=WD_DO_NOT_SAVE_CHANGES)
 
     def _make_target_backup(self, document: Any, target: Path) -> Path:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        del document
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         destination = self.backup_directory / (
             f"{target.stem}.{timestamp}.before-word-editor{target.suffix}"
         )
-        document.SaveCopyAs(str(destination))
+        try:
+            shutil.copy2(target, destination)
+        except OSError as exc:
+            raise WordGatewayError(
+                f"Failed to back up {target.name} to {destination}: {exc}"
+            ) from exc
         return destination
 
     def _rollback_operations(
@@ -149,6 +155,7 @@ class EditableWordComGateway(WordComGateway):
         target_path: Path,
         operations: list[PatchOperation],
         expected_snapshot_sha256: str,
+        expected_styles_sha256: str | None = None,
     ) -> tuple[TemplateSnapshot, Path]:
         target = self._validate_target(target_path)
         if not operations:
@@ -164,12 +171,24 @@ class EditableWordComGateway(WordComGateway):
             applied_operations: list[PatchOperation] = []
             saved = False
             try:
+                if not owns_document and not bool(
+                    self._safe_get(document, "Saved", True)
+                ):
+                    raise WordGatewayError(
+                        f"Save the open Word document before editing styles: {target}"
+                    )
                 current = self._snapshot_document_object(
                     session.application,
                     document,
                     target,
                 )
-                if current.sha256 != expected_snapshot_sha256:
+                current_styles_sha256 = str(
+                    current.metadata.get("styles_sha256") or current.sha256
+                )
+                expected_styles_sha256 = (
+                    expected_styles_sha256 or expected_snapshot_sha256
+                )
+                if current_styles_sha256 != expected_styles_sha256:
                     raise ConcurrentTemplateChange(
                         f"{target.name} changed after the editor loaded it. "
                         "Refresh and merge before applying."
@@ -195,12 +214,19 @@ class EditableWordComGateway(WordComGateway):
                             f"{operation.property_name} changed concurrently."
                         )
                     style = document.Styles.Item(operation.style_name)
-                    self._set_property(
-                        style,
-                        operation.property_name,
-                        operation.value,
-                    )
                     applied_operations.append(operation)
+                    try:
+                        self._set_property(
+                            style,
+                            operation.property_name,
+                            operation.value,
+                        )
+                    except pywintypes.com_error as exc:
+                        raise WordGatewayError(
+                            "Word rejected the style update "
+                            f"{operation.style_name}.{operation.property_name}="
+                            f"{operation.value!r}: {exc}"
+                        ) from exc
 
                 provisional = self._snapshot_document_object(
                     session.application,
@@ -221,12 +247,13 @@ class EditableWordComGateway(WordComGateway):
 
                 document.Save()
                 saved = True
-                updated = self._snapshot_document_object(
-                    session.application,
-                    document,
-                    target,
-                )
-                return updated, backup_path
+                try:
+                    provisional.metadata["file_modified_at"] = (
+                        target.stat().st_mtime
+                    )
+                except OSError:
+                    pass
+                return provisional, backup_path
             except Exception:
                 if not saved and applied_operations:
                     self._rollback_operations(document, applied_operations)

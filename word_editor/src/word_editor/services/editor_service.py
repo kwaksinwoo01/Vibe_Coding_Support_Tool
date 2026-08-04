@@ -154,6 +154,9 @@ class EditorService:
             self.target_path,
             operations,
             expected_snapshot_sha256=current.sha256,
+            expected_styles_sha256=str(
+                current.metadata.get("styles_sha256") or current.sha256
+            ),
         )
         self.current = updated
         if backup:
