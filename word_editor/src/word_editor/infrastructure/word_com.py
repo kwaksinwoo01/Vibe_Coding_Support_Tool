@@ -36,6 +36,12 @@ class _WordSession:
     owns_application: bool
 
 
+@dataclass(slots=True)
+class _StyleObjectIndex:
+    exact: dict[str, Any]
+    folded: dict[str, Any]
+
+
 class WordComGateway:
     """Read and edit Word styles through the desktop Word COM object model."""
 
@@ -397,12 +403,99 @@ class WordComGateway:
     def _to_word_bool(value: Any) -> int:
         return -1 if bool(value) else 0
 
-    def _set_property(self, style: Any, property_name: str, value: Any) -> None:
+    def _build_style_object_index(self, styles: Any) -> _StyleObjectIndex:
+        exact: dict[str, Any] = {}
+        folded: dict[str, Any] = {}
+        try:
+            count = int(styles.Count)
+        except (pywintypes.com_error, TypeError, ValueError) as exc:
+            raise WordGatewayError(
+                f"Could not enumerate the Word Styles collection: {exc}"
+            ) from exc
+
+        for index in range(1, count + 1):
+            try:
+                style = styles.Item(index)
+            except pywintypes.com_error:
+                continue
+            names = (
+                self._safe_get(style, "NameLocal", ""),
+                self._safe_get(style, "Name", ""),
+            )
+            for raw_name in names:
+                if not raw_name:
+                    continue
+                name = str(raw_name)
+                exact.setdefault(name, style)
+                folded.setdefault(name.casefold(), style)
+        return _StyleObjectIndex(exact=exact, folded=folded)
+
+    @staticmethod
+    def _resolve_style_object(
+        style_index: _StyleObjectIndex,
+        value: Any,
+        *,
+        context: str,
+    ) -> Any:
+        if not isinstance(value, str):
+            if hasattr(value, "NameLocal"):
+                return value
+            raise WordGatewayError(
+                f"{context} requires a style name, got {value!r}."
+            )
+        resolved = style_index.exact.get(value)
+        if resolved is None:
+            resolved = style_index.folded.get(value.casefold())
+        if resolved is None:
+            raise WordGatewayError(
+                f"{context} references a style that is not present in the "
+                f"open Word template: {value!r}. Refresh the snapshot and "
+                "select an existing style."
+            )
+        return resolved
+
+    def _set_property(
+        self,
+        style: Any,
+        property_name: str,
+        value: Any,
+        style_index: _StyleObjectIndex | None = None,
+    ) -> None:
         if property_name == "style.base_style":
-            style.BaseStyle = value or ""
+            if not value:
+                style.BaseStyle = ""
+                return
+            if style_index is None:
+                raise WordGatewayError(
+                    "A Word style index is required to set style.base_style."
+                )
+            reference = self._resolve_style_object(
+                style_index,
+                value,
+                context=f"{self._safe_get(style, 'NameLocal', '<style>')}.BaseStyle",
+            )
+            if reference is style:
+                raise WordGatewayError(
+                    f"{self._safe_get(style, 'NameLocal', '<style>')} cannot "
+                    "use itself as its base style."
+                )
+            style.BaseStyle = reference
             return
         if property_name == "style.next_style":
-            style.NextParagraphStyle = value or str(style.NameLocal)
+            if style_index is None:
+                raise WordGatewayError(
+                    "A Word style index is required to set style.next_style."
+                )
+            reference_name = value or str(style.NameLocal)
+            reference = self._resolve_style_object(
+                style_index,
+                reference_name,
+                context=(
+                    f"{self._safe_get(style, 'NameLocal', '<style>')}"
+                    ".NextParagraphStyle"
+                ),
+            )
+            style.NextParagraphStyle = reference
             return
 
         direct_style = {
@@ -500,6 +593,7 @@ class WordComGateway:
                         "Refresh and merge before applying."
                     )
                 backup_path = self._make_backup(document)
+                style_index = self._build_style_object_index(document.Styles)
                 for operation in operations:
                     definition = current.styles.get(operation.style_name)
                     if definition is None:
@@ -514,9 +608,16 @@ class WordComGateway:
                             f"{operation.style_name}.{operation.property_name} "
                             "changed concurrently."
                         )
-                    style = document.Styles.Item(operation.style_name)
+                    style = self._resolve_style_object(
+                        style_index,
+                        operation.style_name,
+                        context="Patch operation",
+                    )
                     self._set_property(
-                        style, operation.property_name, operation.value
+                        style,
+                        operation.property_name,
+                        operation.value,
+                        style_index,
                     )
                 document.Save()
                 updated = self._snapshot_document_object(

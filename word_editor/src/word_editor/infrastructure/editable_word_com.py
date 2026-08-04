@@ -23,6 +23,7 @@ from word_editor.infrastructure.word_com import (
 )
 
 SUPPORTED_WORD_FILES = frozenset({".docx", ".docm", ".dotx", ".dotm"})
+RPC_E_DISCONNECTED = -2147417848
 
 
 class EditableWordComGateway(WordComGateway):
@@ -128,7 +129,14 @@ class EditableWordComGateway(WordComGateway):
                 )
             finally:
                 if owns_document:
-                    document.Close(SaveChanges=WD_DO_NOT_SAVE_CHANGES)
+                    try:
+                        document.Close(SaveChanges=WD_DO_NOT_SAVE_CHANGES)
+                    except pywintypes.com_error as exc:
+                        # Word can disconnect an automation proxy after a
+                        # hidden template window has already closed. The
+                        # completed snapshot remains valid in that case.
+                        if getattr(exc, "hresult", None) != RPC_E_DISCONNECTED:
+                            raise
 
     def _make_target_backup(self, document: Any, target: Path) -> Path:
         del document
@@ -148,14 +156,20 @@ class EditableWordComGateway(WordComGateway):
         self,
         document: Any,
         applied_operations: list[PatchOperation],
+        style_index: Any,
     ) -> None:
         for operation in reversed(applied_operations):
             try:
-                style = document.Styles.Item(operation.style_name)
+                style = self._resolve_style_object(
+                    style_index,
+                    operation.style_name,
+                    context="Rollback operation",
+                )
                 self._set_property(
                     style,
                     operation.property_name,
                     operation.expected_old_value,
+                    style_index,
                 )
             except Exception:
                 # The timestamped backup remains available if Word rejects an
@@ -181,13 +195,13 @@ class EditableWordComGateway(WordComGateway):
             )
             backup_path: Path | None = None
             applied_operations: list[PatchOperation] = []
+            style_index: Any | None = None
             saved = False
             try:
-                if not owns_document and not bool(
-                    self._safe_get(document, "Saved", True)
-                ):
+                if not bool(self._safe_get(document, "Saved", True)):
                     raise WordGatewayError(
-                        f"Save the open Word document before editing styles: {target}"
+                        "Word has unsaved changes in the template or document. "
+                        f"Save it in Word before editing styles: {target}"
                     )
                 current = self._snapshot_document_object(
                     session.application,
@@ -206,6 +220,7 @@ class EditableWordComGateway(WordComGateway):
                         "Refresh and merge before applying."
                     )
 
+                style_index = self._build_style_object_index(document.Styles)
                 backup_path = self._make_target_backup(document, target)
                 for operation in operations:
                     definition = current.styles.get(operation.style_name)
@@ -225,13 +240,18 @@ class EditableWordComGateway(WordComGateway):
                             f"{operation.style_name}."
                             f"{operation.property_name} changed concurrently."
                         )
-                    style = document.Styles.Item(operation.style_name)
+                    style = self._resolve_style_object(
+                        style_index,
+                        operation.style_name,
+                        context="Patch operation",
+                    )
                     applied_operations.append(operation)
                     try:
                         self._set_property(
                             style,
                             operation.property_name,
                             operation.value,
+                            style_index,
                         )
                     except pywintypes.com_error as exc:
                         raise WordGatewayError(
@@ -267,8 +287,12 @@ class EditableWordComGateway(WordComGateway):
                     pass
                 return provisional, backup_path
             except Exception:
-                if not saved and applied_operations:
-                    self._rollback_operations(document, applied_operations)
+                if not saved and applied_operations and style_index is not None:
+                    self._rollback_operations(
+                        document,
+                        applied_operations,
+                        style_index,
+                    )
                 raise
             finally:
                 if owns_document:
