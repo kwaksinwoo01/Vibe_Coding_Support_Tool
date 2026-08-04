@@ -7,6 +7,57 @@ from typing import Any
 
 JsonValue = str | int | float | bool | None | list[Any] | dict[str, Any]
 
+BOOLEAN_PROPERTY_NAMES = frozenset(
+    {
+        "style.quick_style",
+        "style.hidden",
+        "style.unhide_when_used",
+        "style.automatically_update",
+        "style.no_space_same_style",
+        "font.bold",
+        "font.italic",
+        "paragraph.keep_together",
+        "paragraph.keep_with_next",
+        "paragraph.page_break_before",
+    }
+)
+
+
+def normalize_word_boolean(value: Any) -> bool | int | None | Any:
+    """Normalize Word/COM boolean variants without hiding unknown sentinels.
+
+    Word commonly uses VARIANT_BOOL values 0 and -1. pywin32 may expose the
+    same true value as Python True, which becomes integer 1 if converted before
+    checking its type. Both -1 and 1 therefore mean True at the application
+    boundary. Other numeric sentinels remain unchanged for inspection.
+    """
+
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    try:
+        integer = int(value)
+    except (TypeError, ValueError):
+        return value
+    if integer == 0:
+        return False
+    if integer in {-1, 1}:
+        return True
+    return integer
+
+
+def normalize_style_properties(
+    properties: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
+    normalized = dict(properties)
+    for property_name in BOOLEAN_PROPERTY_NAMES:
+        if property_name in normalized:
+            normalized[property_name] = normalize_word_boolean(
+                normalized[property_name]
+            )
+    return normalized
+
 
 @dataclass(slots=True)
 class StyleDefinition:
@@ -33,7 +84,7 @@ class StyleDefinition:
             "style_type": self.style_type,
             "built_in": self.built_in,
             "in_use": self.in_use,
-            "properties": self.properties,
+            "properties": normalize_style_properties(self.properties),
             "list_binding": self.list_binding,
         }
 
@@ -54,9 +105,11 @@ class StyleDefinition:
             original_name=str(value.get("original_name") or name),
             built_in_id=built_in_id,
             style_type=str(value.get("style_type", "Unknown")),
-            built_in=bool(value.get("built_in", False)),
-            in_use=bool(value.get("in_use", False)),
-            properties=dict(value.get("properties", {})),
+            built_in=bool(normalize_word_boolean(value.get("built_in", False))),
+            in_use=bool(normalize_word_boolean(value.get("in_use", False))),
+            properties=normalize_style_properties(
+                dict(value.get("properties", {}))
+            ),
             list_binding=dict(value.get("list_binding", {})),
         )
 
