@@ -11,10 +11,10 @@ import pythoncom
 import pywintypes
 import win32com.client
 
+from word_editor.infrastructure.editable_word_com import EditableWordComGateway
 from word_editor.infrastructure.word_com import (
     WD_ALERTS_NONE,
     WD_DO_NOT_SAVE_CHANGES,
-    WordComGateway,
     WordGatewayError,
     _WordSession,
 )
@@ -150,8 +150,8 @@ def format_word_com_diagnostics(attempts: list[tuple[str, BaseException]]) -> st
     )
 
 
-class RobustWordComGateway(WordComGateway):
-    """Word gateway with architecture-aware COM creation and diagnostics."""
+class RobustWordComGateway(EditableWordComGateway):
+    """Editable Word gateway with architecture-aware COM diagnostics."""
 
     @contextmanager
     def _session(self) -> Iterator[_WordSession]:
