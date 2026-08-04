@@ -110,7 +110,7 @@ Subsequent runs:
 .\run_word_editor.ps1
 ```
 
-Requirements: Windows, desktop Microsoft Word, Python 3.10+, and access to modify the selected Word file.
+Requirements: Windows, desktop Microsoft Word, Python 3.14.6, and access to modify the selected Word file.
 
 ## Validation
 

@@ -10,8 +10,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$env:PYTHONHOME = $null
+$env:PYTHONPATH = $null
 
-$minimumPythonVersion = [version]'3.10.0'
+$requiredPythonVersion = [version]'3.14.6'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repositoryRoot = Split-Path -Parent $projectRoot
 Set-Location $projectRoot
@@ -131,7 +133,7 @@ function Get-PythonCandidates {
 function Test-PythonCandidate {
     param(
         [Parameter(Mandatory = $true)] [string]$Candidate,
-        [Parameter(Mandatory = $true)] [version]$MinimumVersion
+        [Parameter(Mandatory = $true)] [version]$RequiredVersion
     )
 
     $result = [ordered]@{
@@ -244,11 +246,11 @@ print(json.dumps({
         $result.WordComRegistered = [bool]$info.word_com_registered
         $result.WordClsid = [string]$info.word_clsid
 
-        if ($version -lt $MinimumVersion) {
+        if ($version -ne $RequiredVersion) {
             $result.Reason = (
-                'Python {0}은 최소 요구 버전 {1}보다 낮습니다.' -f
+                'Python {0}은 저장소 요구 버전 {1}과 일치하지 않습니다.' -f
                 $version,
-                $MinimumVersion
+                $RequiredVersion
             )
             return [pscustomobject]$result
         }
@@ -290,7 +292,7 @@ print(json.dumps({
 function Find-CompatiblePython {
     param(
         [AllowNull()] [string]$RequestedPythonPath,
-        [Parameter(Mandatory = $true)] [version]$MinimumVersion
+        [Parameter(Mandatory = $true)] [version]$RequiredVersion
     )
 
     $results = @()
@@ -298,7 +300,7 @@ function Find-CompatiblePython {
     foreach ($candidate in @(Get-PythonCandidates -RequestedPythonPath $RequestedPythonPath)) {
         $result = Test-PythonCandidate `
             -Candidate $candidate `
-            -MinimumVersion $MinimumVersion
+            -RequiredVersion $RequiredVersion
         $results += $result
         if ($null -eq $selected -and $result.Valid) {
             $selected = $result
@@ -348,7 +350,7 @@ function Invoke-CheckedPython {
 
 $discovery = Find-CompatiblePython `
     -RequestedPythonPath $PythonPath `
-    -MinimumVersion $minimumPythonVersion
+    -RequiredVersion $requiredPythonVersion
 
 if ($Diagnose) {
     Show-PythonDiagnostics -Results $discovery.Results
@@ -370,7 +372,7 @@ if ($RecreateVenv -and (Test-Path -LiteralPath $venv)) {
 if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
     $venvInfo = Test-PythonCandidate `
         -Candidate $venvPython `
-        -MinimumVersion $minimumPythonVersion
+        -RequiredVersion $requiredPythonVersion
 
     if (-not $venvInfo.Valid) {
         throw (
@@ -394,12 +396,12 @@ else {
         }
 
         throw (
-            "Word COM을 사용할 수 있는 Python {0} 이상을 찾지 못했습니다.`r`n" +
+            "Word COM을 사용할 수 있는 Python {0}을 찾지 못했습니다.`r`n" +
             "검사 결과:`r`n{1}`r`n`r`n" +
             "먼저 진단하십시오:`r`n  .\run_word_editor.ps1 -Diagnose`r`n`r`n" +
             'Word는 PowerShell에서 작동하지만 모든 Python 후보가 WordCOM=False라면 ' +
             'Office와 Python 비트 수가 다릅니다. Office와 같은 비트 수의 Python을 설치하십시오.'
-        ) -f $minimumPythonVersion, ($diagnostics -join "`r`n")
+        ) -f $requiredPythonVersion, ($diagnostics -join "`r`n")
     }
 
     $basePython = $discovery.Selected
@@ -418,7 +420,7 @@ else {
 
 $venvPythonInfo = Test-PythonCandidate `
     -Candidate $venvPython `
-    -MinimumVersion $minimumPythonVersion
+    -RequiredVersion $requiredPythonVersion
 
 if (-not $venvPythonInfo.Valid) {
     throw (

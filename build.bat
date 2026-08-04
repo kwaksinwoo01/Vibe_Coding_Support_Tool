@@ -1,29 +1,18 @@
 @echo off
-REM Build script for vibeStation Windows EXE
+setlocal
+cd /d "%~dp0"
 
-echo Building vibeStation...
+echo Building vibeStation with the repository Python version...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\Invoke-VibeStationBuild.ps1" %*
+set "BUILD_EXIT=%ERRORLEVEL%"
+
+if not "%BUILD_EXIT%"=="0" (
+    echo.
+    echo Build failed with exit code %BUILD_EXIT%.
+    exit /b %BUILD_EXIT%
+)
+
 echo.
-
-REM Check if PyInstaller is installed
-python -c "import PyInstaller" 2>nul
-if errorlevel 1 (
-    echo PyInstaller not found. Installing...
-    pip install pyinstaller
-)
-
-REM Build the executable
-echo Running PyInstaller...
-pyinstaller vibestation.spec
-
-if errorlevel 0 (
-    echo.
-    echo Build successful!
-    echo Executable location: dist\vibeStation.exe
-    echo.
-    pause
-) else (
-    echo.
-    echo Build failed!
-    echo.
-    pause
-)
+echo Build successful.
+echo Executable location: dist\vibeStation.exe
+exit /b 0

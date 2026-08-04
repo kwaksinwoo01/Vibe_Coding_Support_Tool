@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "word-normal-style-editor"
 version = "0.1.0"
 description = "Live Normal.dotm style editor with validation and property-level merge"
-requires-python = ">=3.10"
+requires-python = "==3.14.6"
 dependencies = [
   "PySide6>=6.8,<7",
   "pywin32>=308; platform_system == 'Windows'",
@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8,<9"]
-build = ["pyinstaller>=6.10,<7"]
+build = ["pyinstaller==6.21.0"]
 
 [project.scripts]
 word-editor = "word_editor.__main__:main"
