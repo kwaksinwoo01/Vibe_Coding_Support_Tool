@@ -36,9 +36,17 @@ from word_editor.domain.property_policy import (
     common_property_policy,
 )
 from word_editor.services.editor_service import EditorService
+from word_editor.ui.property_display import (
+    format_property_value,
+    parse_property_value,
+    property_label,
+    style_type_label,
+)
 
 MIXED_VALUE_TEXT = "⟪혼합값: 변경할 값을 입력⟫"
 WORD_FILE_FILTER = "Word files (*.docx *.docm *.dotx *.dotm)"
+STYLE_NAME_ROLE = Qt.ItemDataRole.UserRole
+ORIGINAL_NAME_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
 class _EventBridge(QObject):
@@ -50,6 +58,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.service = service
         self._loading_properties = False
+        self._loading_style_lists = False
         self._merge_plan: MergePlan | None = None
         self._event_bridge = _EventBridge()
         self._event_bridge.target_changed.connect(self._on_external_change)
@@ -59,7 +68,7 @@ class MainWindow(QMainWindow):
         self._apply_timer.timeout.connect(self.apply_selected_styles)
 
         self.setWindowTitle("Word Style Editor")
-        self.resize(1600, 920)
+        self.resize(1680, 940)
         self.setStatusBar(QStatusBar(self))
         self._build_ui()
         self._load_initial_state()
@@ -119,18 +128,28 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout(left)
         self.style_list_label = QLabel("모든 스타일")
         left_layout.addWidget(self.style_list_label)
+
+        sort_bar = QHBoxLayout()
+        sort_bar.addWidget(QLabel("정렬:"))
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItem("우선순위순", "priority")
+        self.sort_combo.addItem("이름순", "name")
+        self.sort_combo.currentIndexChanged.connect(self._resort_styles)
+        sort_bar.addWidget(self.sort_combo, 1)
+        left_layout.addLayout(sort_bar)
+
         self.filter_edit = QLineEdit()
         self.filter_edit.setPlaceholderText("로컬 이름 또는 원래 이름 필터")
         self.filter_edit.textChanged.connect(self._filter_styles)
         left_layout.addWidget(self.filter_edit)
-        self.style_list = QListWidget()
-        self.style_list.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
-        )
-        self.style_list.itemSelectionChanged.connect(
-            self._load_selected_styles
-        )
-        left_layout.addWidget(self.style_list, 1)
+
+        self.style_tabs = QTabWidget()
+        self.active_style_list = self._create_style_list()
+        self.hidden_style_list = self._create_style_list()
+        self.style_tabs.addTab(self.active_style_list, "사용 스타일")
+        self.style_tabs.addTab(self.hidden_style_list, "숨김 스타일")
+        self.style_tabs.currentChanged.connect(self._style_tab_changed)
+        left_layout.addWidget(self.style_tabs, 1)
         splitter.addWidget(left)
 
         center = QWidget()
@@ -143,9 +162,9 @@ class MainWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         center_layout.addWidget(self.style_identity)
-        self.property_table = QTableWidget(0, 4)
+        self.property_table = QTableWidget(0, 5)
         self.property_table.setHorizontalHeaderLabels(
-            ["속성", "편집 상태", "현재 값", "편집값"]
+            ["이름", "내부 속성 키", "편집 상태", "현재 값", "편집값"]
         )
         self.property_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
@@ -154,10 +173,13 @@ class MainWindow(QMainWindow):
             1, QHeaderView.ResizeMode.ResizeToContents
         )
         self.property_table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.Stretch
+            2, QHeaderView.ResizeMode.ResizeToContents
         )
         self.property_table.horizontalHeader().setSectionResizeMode(
             3, QHeaderView.ResizeMode.Stretch
+        )
+        self.property_table.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.Stretch
         )
         self.property_table.itemChanged.connect(self._property_edited)
         center_layout.addWidget(self.property_table, 1)
@@ -177,9 +199,17 @@ class MainWindow(QMainWindow):
         merge_layout = QVBoxLayout(merge_tab)
         self.merge_summary = QLabel("비교한 문서가 없습니다.")
         merge_layout.addWidget(self.merge_summary)
-        self.merge_table = QTableWidget(0, 6)
+        self.merge_table = QTableWidget(0, 7)
         self.merge_table.setHorizontalHeaderLabels(
-            ["스타일", "속성", "기준", "현재 대상", "비교 문서", "선택"]
+            [
+                "스타일",
+                "속성 이름",
+                "내부 속성 키",
+                "기준",
+                "현재 대상",
+                "비교 문서",
+                "선택",
+            ]
         )
         self.merge_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
@@ -190,9 +220,29 @@ class MainWindow(QMainWindow):
         merge_layout.addWidget(self.apply_merge_button)
         self.tabs.addTab(merge_tab, "Diff / 병합")
         splitter.addWidget(self.tabs)
-        splitter.setSizes([330, 720, 550])
+        splitter.setSizes([360, 760, 560])
 
         self.setCentralWidget(root)
+
+    def _create_style_list(self) -> QListWidget:
+        widget = QListWidget()
+        widget.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        widget.itemSelectionChanged.connect(self._style_selection_changed)
+        return widget
+
+    def _all_style_lists(self) -> tuple[QListWidget, QListWidget]:
+        return self.active_style_list, self.hidden_style_list
+
+    def _current_style_list(self) -> QListWidget:
+        current = self.style_tabs.currentWidget()
+        if isinstance(current, QListWidget):
+            return current
+        return self.active_style_list
+
+    def _item_style_name(self, item: QListWidgetItem) -> str:
+        return str(item.data(STYLE_NAME_ROLE) or item.text())
 
     def _load_initial_state(self) -> None:
         try:
@@ -246,50 +296,146 @@ class MainWindow(QMainWindow):
         )
 
     def _selected_style_names(self) -> list[str]:
-        return [item.text() for item in self.style_list.selectedItems()]
+        return [
+            self._item_style_name(item)
+            for item in self._current_style_list().selectedItems()
+        ]
+
+    def _selected_names_by_tab(self) -> tuple[list[str], list[str]]:
+        return (
+            [self._item_style_name(item) for item in self.active_style_list.selectedItems()],
+            [self._item_style_name(item) for item in self.hidden_style_list.selectedItems()],
+        )
+
+    def _style_sort_key(self, style: Any) -> tuple[Any, ...]:
+        mode = self.sort_combo.currentData()
+        name_key = style.local_name.casefold()
+        if mode == "name":
+            return (name_key,)
+        priority = style.properties.get("style.priority")
+        try:
+            numeric_priority = int(priority)
+        except (TypeError, ValueError):
+            numeric_priority = 1_000_000
+        return (numeric_priority, name_key)
+
+    @staticmethod
+    def _is_hidden_style(style: Any) -> bool:
+        return style.properties.get("style.hidden") is True
 
     def _populate_styles(
         self,
         styles: dict[str, Any],
         selected_names: list[str] | None = None,
     ) -> None:
-        preserved = selected_names or self._selected_style_names()
-        self.style_list.blockSignals(True)
-        self.style_list.clear()
-        for name in sorted(styles, key=str.casefold):
-            style = styles[name]
-            item = QListWidgetItem(name)
-            item.setData(Qt.ItemDataRole.UserRole, style.original_name)
-            item.setToolTip(
-                f"로컬 이름={style.local_name}\n"
-                f"원래 이름={style.original_name or '(확인 불가)'}\n"
-                f"BuiltIn ID={style.built_in_id}\n"
-                f"Type={style.style_type}, BuiltIn={style.built_in}, "
-                f"InUse={style.in_use}"
+        active_selected, hidden_selected = self._selected_names_by_tab()
+        if selected_names is not None:
+            selected_set = set(selected_names)
+            active_selected = list(selected_set)
+            hidden_selected = list(selected_set)
+
+        active_styles = [style for style in styles.values() if not self._is_hidden_style(style)]
+        hidden_styles = [style for style in styles.values() if self._is_hidden_style(style)]
+        active_styles.sort(key=self._style_sort_key)
+        hidden_styles.sort(key=self._style_sort_key)
+
+        self._loading_style_lists = True
+        try:
+            for widget in self._all_style_lists():
+                widget.blockSignals(True)
+                widget.clear()
+
+            self._fill_style_list(
+                self.active_style_list,
+                active_styles,
+                set(active_selected),
             )
-            self.style_list.addItem(item)
-        for name in preserved:
-            for item in self.style_list.findItems(
-                name,
-                Qt.MatchFlag.MatchExactly,
-            ):
-                item.setSelected(True)
-        self.style_list.blockSignals(False)
+            self._fill_style_list(
+                self.hidden_style_list,
+                hidden_styles,
+                set(hidden_selected),
+            )
+
+            for widget in self._all_style_lists():
+                widget.blockSignals(False)
+        finally:
+            self._loading_style_lists = False
+
+        self.style_tabs.setTabText(0, f"사용 스타일 ({len(active_styles)})")
+        self.style_tabs.setTabText(1, f"숨김 스타일 ({len(hidden_styles)})")
         self._filter_styles(self.filter_edit.text())
-        if not self.style_list.selectedItems() and self.style_list.count():
-            self.style_list.setCurrentRow(0)
+
+        if selected_names:
+            active_hits = self.active_style_list.selectedItems()
+            hidden_hits = self.hidden_style_list.selectedItems()
+            if hidden_hits and not active_hits:
+                self.style_tabs.setCurrentIndex(1)
+            elif active_hits:
+                self.style_tabs.setCurrentIndex(0)
+
+        current_list = self._current_style_list()
+        if not current_list.selectedItems() and current_list.count():
+            current_list.setCurrentRow(0)
         else:
             self._load_selected_styles()
 
+    def _fill_style_list(
+        self,
+        widget: QListWidget,
+        styles: list[Any],
+        selected_names: set[str],
+    ) -> None:
+        for style in styles:
+            item = QListWidgetItem(style.local_name)
+            item.setData(STYLE_NAME_ROLE, style.local_name)
+            item.setData(ORIGINAL_NAME_ROLE, style.original_name)
+            priority = style.properties.get("style.priority")
+            hidden = style.properties.get("style.hidden") is True
+            item.setToolTip(
+                f"로컬 이름={style.local_name}\n"
+                f"원래 이름={style.original_name or '(확인 불가)'}\n"
+                f"우선순위={priority if priority is not None else '(없음)'}\n"
+                f"숨김={hidden}\n"
+                f"BuiltIn ID={style.built_in_id}\n"
+                f"Type={style_type_label(style.style_type)}, "
+                f"BuiltIn={style.built_in}, InUse={style.in_use}"
+            )
+            widget.addItem(item)
+            if style.local_name in selected_names:
+                item.setSelected(True)
+
+    def _resort_styles(self) -> None:
+        snapshot = self.service.current
+        if snapshot is None:
+            return
+        selected = self._selected_style_names()
+        self._populate_styles(snapshot.styles, selected)
+        mode = "우선순위순" if self.sort_combo.currentData() == "priority" else "이름순"
+        self.statusBar().showMessage(f"스타일을 {mode}으로 정렬했습니다.", 3000)
+
+    def _style_tab_changed(self, _index: int) -> None:
+        if self._loading_style_lists:
+            return
+        self._load_selected_styles()
+
+    def _style_selection_changed(self) -> None:
+        if self._loading_style_lists:
+            return
+        sender = self.sender()
+        current = self._current_style_list()
+        if sender is not current:
+            return
+        self._load_selected_styles()
+
     def _filter_styles(self, value: str) -> None:
         needle = value.strip().casefold()
-        for index in range(self.style_list.count()):
-            item = self.style_list.item(index)
-            original_name = str(
-                item.data(Qt.ItemDataRole.UserRole) or ""
-            ).casefold()
-            haystack = f"{item.text().casefold()} {original_name}"
-            item.setHidden(bool(needle and needle not in haystack))
+        for widget in self._all_style_lists():
+            for index in range(widget.count()):
+                item = widget.item(index)
+                original_name = str(item.data(ORIGINAL_NAME_ROLE) or "").casefold()
+                local_name = self._item_style_name(item).casefold()
+                haystack = f"{local_name} {original_name}"
+                item.setHidden(bool(needle and needle not in haystack))
 
     @staticmethod
     def _make_read_only(item: QTableWidgetItem) -> None:
@@ -308,22 +454,24 @@ class MainWindow(QMainWindow):
     ) -> None:
         row = self.property_table.rowCount()
         self.property_table.insertRow(row)
-        name_item = QTableWidgetItem(property_name)
+        label_item = QTableWidgetItem(property_label(property_name))
+        key_item = QTableWidgetItem(property_name)
         state_item = QTableWidgetItem(state)
         current_item = QTableWidgetItem(current_text)
         edit_item = QTableWidgetItem(edit_text)
-        for item in (name_item, state_item, current_item):
+        for item in (label_item, key_item, state_item, current_item):
             self._make_read_only(item)
         if not editable:
             self._make_read_only(edit_item)
         if tooltip:
-            for item in (name_item, state_item, current_item, edit_item):
+            for item in (label_item, key_item, state_item, current_item, edit_item):
                 item.setToolTip(tooltip)
         edit_item.setData(Qt.ItemDataRole.UserRole, row_data)
-        self.property_table.setItem(row, 0, name_item)
-        self.property_table.setItem(row, 1, state_item)
-        self.property_table.setItem(row, 2, current_item)
-        self.property_table.setItem(row, 3, edit_item)
+        self.property_table.setItem(row, 0, label_item)
+        self.property_table.setItem(row, 1, key_item)
+        self.property_table.setItem(row, 2, state_item)
+        self.property_table.setItem(row, 3, current_item)
+        self.property_table.setItem(row, 4, edit_item)
 
     def _load_selected_styles(self) -> None:
         snapshot = self.service.current
@@ -340,8 +488,8 @@ class MainWindow(QMainWindow):
             if len(styles) == 1:
                 style = styles[0]
                 self.style_title.setText(
-                    f"{style.local_name} · {style.style_type} · "
-                    f"BuiltIn={style.built_in}"
+                    f"{style.local_name} · {style_type_label(style.style_type)} · "
+                    f"내장 스타일={format_property_value('', style.built_in)}"
                 )
                 self.style_identity.setText(
                     f"로컬 표시 이름: {style.local_name}\n"
@@ -358,7 +506,7 @@ class MainWindow(QMainWindow):
                     ("meta.in_use", style.in_use),
                 )
                 for name, value in metadata:
-                    text = self._format_value(value)
+                    text = format_property_value(name, value)
                     self._append_row(
                         name,
                         "읽기 전용 메타데이터",
@@ -380,7 +528,7 @@ class MainWindow(QMainWindow):
                 same = all(value == first for value in values[1:])
                 policy = common_property_policy(styles, property_name)
                 current_text = (
-                    self._format_value(first)
+                    format_property_value(property_name, first)
                     if same
                     else f"혼합값 ({len({self._stable_value(v) for v in values})}종)"
                 )
@@ -413,31 +561,11 @@ class MainWindow(QMainWindow):
         return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
     @staticmethod
-    def _format_value(value: Any) -> str:
-        if isinstance(value, str):
-            return value
-        return json.dumps(value, ensure_ascii=False)
-
-    @staticmethod
-    def _parse_value(text: str, original: Any) -> Any:
-        stripped = text.strip()
-        if isinstance(original, str):
-            return text
-        if stripped == "":
-            return None
-        try:
-            return json.loads(stripped)
-        except json.JSONDecodeError:
-            if isinstance(original, bool):
-                lowered = stripped.casefold()
-                if lowered in {"true", "yes", "1", "예"}:
-                    return True
-                if lowered in {"false", "no", "0", "아니오"}:
-                    return False
-            return text
+    def _format_value(value: Any, property_name: str = "") -> str:
+        return format_property_value(property_name, value)
 
     def _property_edited(self, item: QTableWidgetItem) -> None:
-        if self._loading_properties or item.column() != 3:
+        if self._loading_properties or item.column() != 4:
             return
         selected_count = len(self._selected_style_names())
         if self.live_sync.isChecked() and selected_count == 1:
@@ -451,8 +579,8 @@ class MainWindow(QMainWindow):
     def _collect_common_updates(self) -> dict[str, Any]:
         updates: dict[str, Any] = {}
         for row in range(self.property_table.rowCount()):
-            property_name = self.property_table.item(row, 0).text()
-            edit_item = self.property_table.item(row, 3)
+            property_name = self.property_table.item(row, 1).text()
+            edit_item = self.property_table.item(row, 4)
             row_data = edit_item.data(Qt.ItemDataRole.UserRole) or {}
             if row_data.get("metadata"):
                 continue
@@ -468,7 +596,11 @@ class MainWindow(QMainWindow):
             }:
                 continue
             original = row_data.get("representative")
-            updates[property_name] = self._parse_value(text, original)
+            updates[property_name] = parse_property_value(
+                property_name,
+                text,
+                original,
+            )
         return updates
 
     def apply_selected_styles(self) -> None:
@@ -573,10 +705,20 @@ class MainWindow(QMainWindow):
         for row, conflict in enumerate(plan.conflicts):
             values = [
                 conflict.style_name,
+                property_label(conflict.property_name),
                 conflict.property_name,
-                self._format_value(conflict.baseline_value),
-                self._format_value(conflict.normal_value),
-                self._format_value(conflict.document_value),
+                self._format_value(
+                    conflict.baseline_value,
+                    conflict.property_name,
+                ),
+                self._format_value(
+                    conflict.normal_value,
+                    conflict.property_name,
+                ),
+                self._format_value(
+                    conflict.document_value,
+                    conflict.property_name,
+                ),
             ]
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
@@ -586,14 +728,14 @@ class MainWindow(QMainWindow):
             chooser.addItem("현재 대상 유지", ConflictChoice.KEEP_NORMAL)
             chooser.addItem("비교 문서 값 사용", ConflictChoice.USE_DOCUMENT)
             chooser.addItem("기준값 사용", ConflictChoice.USE_BASELINE)
-            self.merge_table.setCellWidget(row, 5, chooser)
+            self.merge_table.setCellWidget(row, 6, chooser)
 
     def apply_merge(self) -> None:
         plan = self._merge_plan
         if plan is None:
             return
         for row, conflict in enumerate(plan.conflicts):
-            chooser = self.merge_table.cellWidget(row, 5)
+            chooser = self.merge_table.cellWidget(row, 6)
             if isinstance(chooser, QComboBox):
                 conflict.choice = chooser.currentData()
         try:
