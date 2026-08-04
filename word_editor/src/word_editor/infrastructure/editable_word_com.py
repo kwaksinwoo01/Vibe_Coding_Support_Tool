@@ -54,20 +54,59 @@ class EditableWordComGateway(WordComGateway):
             )
         return resolved
 
-    def _open_target(self, application: Any, path: Path, read_only: bool) -> Any:
+    @staticmethod
+    def _same_path(left: Path, right: Path) -> bool:
+        try:
+            return left.resolve() == right.resolve()
+        except OSError:
+            return str(left).casefold() == str(right).casefold()
+
+    def _find_open_document(self, application: Any, path: Path) -> Any | None:
+        try:
+            count = int(application.Documents.Count)
+        except (pywintypes.com_error, TypeError, ValueError):
+            return None
+        for index in range(1, count + 1):
+            try:
+                document = application.Documents.Item(index)
+                full_name = str(document.FullName)
+                if full_name and self._same_path(Path(full_name), path):
+                    return document
+            except (pywintypes.com_error, OSError, ValueError):
+                continue
+        return None
+
+    def _open_target(
+        self,
+        application: Any,
+        path: Path,
+        read_only: bool,
+    ) -> tuple[Any, bool]:
         if self._is_normal_path(path):
-            return application.NormalTemplate.OpenAsDocument()
-        return application.Documents.Open(
+            return application.NormalTemplate.OpenAsDocument(), True
+        open_document = self._find_open_document(application, path)
+        if open_document is not None:
+            if not read_only and bool(self._safe_get(open_document, "ReadOnly", False)):
+                raise WordGatewayError(
+                    f"The open Word document is read-only: {path}"
+                )
+            return open_document, False
+        document = application.Documents.Open(
             FileName=str(path),
             ReadOnly=read_only,
             AddToRecentFiles=False,
             Visible=False,
         )
+        return document, True
 
     def snapshot_path(self, path: Path) -> TemplateSnapshot:
         target = self._validate_target(path)
         with self._session() as session:
-            document = self._open_target(session.application, target, read_only=True)
+            document, owns_document = self._open_target(
+                session.application,
+                target,
+                read_only=True,
+            )
             try:
                 return self._snapshot_document_object(
                     session.application,
@@ -75,7 +114,8 @@ class EditableWordComGateway(WordComGateway):
                     target,
                 )
             finally:
-                document.Close(SaveChanges=WD_DO_NOT_SAVE_CHANGES)
+                if owns_document:
+                    document.Close(SaveChanges=WD_DO_NOT_SAVE_CHANGES)
 
     def _make_target_backup(self, document: Any, target: Path) -> Path:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -96,7 +136,11 @@ class EditableWordComGateway(WordComGateway):
             return self.snapshot_path(target), Path()
 
         with self._session() as session:
-            document = self._open_target(session.application, target, read_only=False)
+            document, owns_document = self._open_target(
+                session.application,
+                target,
+                read_only=False,
+            )
             backup_path: Path | None = None
             try:
                 current = self._snapshot_document_object(
@@ -144,10 +188,11 @@ class EditableWordComGateway(WordComGateway):
                 )
                 return updated, backup_path
             finally:
-                try:
-                    document.Close(SaveChanges=WD_DO_NOT_SAVE_CHANGES)
-                except pywintypes.com_error:
-                    pass
+                if owns_document:
+                    try:
+                        document.Close(SaveChanges=WD_DO_NOT_SAVE_CHANGES)
+                    except pywintypes.com_error:
+                        pass
 
     def restore_backup_to_target(
         self,
