@@ -3,11 +3,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from word_editor.domain.models import (
-    BOOLEAN_PROPERTY_NAMES,
-    normalize_word_boolean,
-)
-
 PROPERTY_LABELS: dict[str, str] = {
     "meta.local_name": "로컬 표시 이름",
     "meta.original_name": "Word 원래 이름",
@@ -45,122 +40,42 @@ PROPERTY_LABELS: dict[str, str] = {
     "paragraph.page_break_before": "앞에서 페이지 나누기",
 }
 
-BOOLEAN_DISPLAY_PROPERTIES = BOOLEAN_PROPERTY_NAMES | frozenset(
-    {"meta.built_in", "meta.in_use"}
-)
-
-STYLE_TYPE_LABELS = {
-    "Paragraph": "문단 스타일",
-    "Character": "문자 스타일",
-    "Table": "표 스타일",
-    "List": "목록 스타일",
-    "ParagraphOnly": "문단 전용 스타일",
-    "Linked": "연결 스타일",
-    "Unknown": "알 수 없음",
-}
-
-ENUM_VALUE_LABELS: dict[str, dict[int, str]] = {
-    "paragraph.alignment": {
-        0: "왼쪽 맞춤",
-        1: "가운데 맞춤",
-        2: "오른쪽 맞춤",
-        3: "양쪽 맞춤",
-        4: "균등 분할",
-        5: "중간 양쪽 맞춤",
-        6: "넓은 양쪽 맞춤",
-        7: "좁은 양쪽 맞춤",
-        8: "태국어 양쪽 맞춤",
-    },
-    "paragraph.line_spacing_rule": {
-        0: "한 줄",
-        1: "1.5줄",
-        2: "두 줄",
-        3: "최소",
-        4: "고정",
-        5: "배수",
-    },
-    "paragraph.outline_level": {
-        1: "수준 1",
-        2: "수준 2",
-        3: "수준 3",
-        4: "수준 4",
-        5: "수준 5",
-        6: "수준 6",
-        7: "수준 7",
-        8: "수준 8",
-        9: "수준 9",
-        10: "본문 텍스트",
-    },
-    "font.underline": {
-        0: "없음",
-        1: "한 줄",
-        2: "단어만",
-        3: "두 줄",
-        4: "점선",
-        6: "굵은 선",
-        7: "파선",
-        9: "일점쇄선",
-        10: "이점쇄선",
-        11: "물결선",
-        27: "굵은 물결선",
-        43: "두 줄 물결선",
-    },
-}
-
 
 def property_label(property_name: str) -> str:
+    """Return only the Korean display label for an internal property key."""
+
     return PROPERTY_LABELS.get(property_name, property_name)
 
 
 def style_type_label(value: str) -> str:
-    return STYLE_TYPE_LABELS.get(value, value)
+    """Keep the original style-type value unchanged."""
+
+    return value
 
 
 def format_property_value(property_name: str, value: Any) -> str:
-    if value is None:
-        return "없음"
-    if property_name in BOOLEAN_DISPLAY_PROPERTIES:
-        normalized = normalize_word_boolean(value)
-        if isinstance(normalized, bool):
-            return "예" if normalized else "아니오"
-    if isinstance(value, bool):
-        return "예" if value else "아니오"
-    if property_name == "meta.style_type" and isinstance(value, str):
-        return style_type_label(value)
-    enum_values = ENUM_VALUE_LABELS.get(property_name)
-    if enum_values is not None:
-        try:
-            integer = int(value)
-        except (TypeError, ValueError):
-            pass
-        else:
-            if integer in enum_values:
-                return enum_values[integer]
+    """Render the stored value without semantic translation.
+
+    The property name is accepted for API compatibility but intentionally does
+    not affect formatting. Strings remain strings; all other values use their
+    JSON representation, such as true, false, null, 0, 1, and enum numbers.
+    """
+
+    del property_name
     if isinstance(value, str):
         return value
     return json.dumps(value, ensure_ascii=False)
 
 
 def parse_property_value(property_name: str, text: str, original: Any) -> Any:
-    stripped = text.strip()
-    if property_name in BOOLEAN_DISPLAY_PROPERTIES or isinstance(original, bool):
-        lowered = stripped.casefold()
-        if lowered in {"예", "참", "true", "yes", "1", "-1"}:
-            return True
-        if lowered in {"아니오", "거짓", "false", "no", "0"}:
-            return False
-    if original is None and stripped.casefold() in {"", "없음", "null", "none"}:
-        return None
-    enum_values = ENUM_VALUE_LABELS.get(property_name)
-    if enum_values is not None:
-        reverse = {label.casefold(): value for value, label in enum_values.items()}
-        if stripped.casefold() in reverse:
-            return reverse[stripped.casefold()]
+    """Parse the edit field without localized aliases or enum conversion."""
+
+    del property_name
     if isinstance(original, str):
         return text
-    if stripped == "":
+    if text.strip() == "":
         return None
     try:
-        return json.loads(stripped)
+        return json.loads(text)
     except json.JSONDecodeError:
         return text
