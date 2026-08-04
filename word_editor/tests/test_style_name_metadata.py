@@ -17,6 +17,28 @@ def test_old_snapshot_without_name_metadata_remains_readable() -> None:
     assert style.built_in_id is None
 
 
+def test_legacy_word_boolean_values_are_normalized() -> None:
+    style = StyleDefinition.from_dict(
+        {
+            "name": "SOP_본문",
+            "style_type": "Paragraph",
+            "built_in": 0,
+            "in_use": -1,
+            "properties": {
+                "style.hidden": 1,
+                "style.quick_style": 0,
+                "font.bold": -1,
+            },
+            "list_binding": {},
+        }
+    )
+    assert style.built_in is False
+    assert style.in_use is True
+    assert style.properties["style.hidden"] is True
+    assert style.properties["style.quick_style"] is False
+    assert style.properties["font.bold"] is True
+
+
 def test_new_name_metadata_round_trips() -> None:
     original = StyleDefinition(
         name="제목 1",
