@@ -9,6 +9,7 @@ import pywintypes
 
 from word_editor.domain.models import PatchOperation, StyleDefinition, TemplateSnapshot
 from word_editor.domain.property_policy import assert_property_editable
+from word_editor.domain.validation import validate_snapshot
 from word_editor.infrastructure.word_com import (
     WD_DO_NOT_SAVE_CHANGES,
     WordComGateway,
@@ -125,6 +126,24 @@ class EditableWordComGateway(WordComGateway):
         document.SaveCopyAs(str(destination))
         return destination
 
+    def _rollback_operations(
+        self,
+        document: Any,
+        applied_operations: list[PatchOperation],
+    ) -> None:
+        for operation in reversed(applied_operations):
+            try:
+                style = document.Styles.Item(operation.style_name)
+                self._set_property(
+                    style,
+                    operation.property_name,
+                    operation.expected_old_value,
+                )
+            except Exception:
+                # The timestamped backup remains available if Word rejects an
+                # individual in-memory rollback property.
+                continue
+
     def apply_operations_to_path(
         self,
         target_path: Path,
@@ -142,6 +161,8 @@ class EditableWordComGateway(WordComGateway):
                 read_only=False,
             )
             backup_path: Path | None = None
+            applied_operations: list[PatchOperation] = []
+            saved = False
             try:
                 current = self._snapshot_document_object(
                     session.application,
@@ -179,14 +200,37 @@ class EditableWordComGateway(WordComGateway):
                         operation.property_name,
                         operation.value,
                     )
+                    applied_operations.append(operation)
+
+                provisional = self._snapshot_document_object(
+                    session.application,
+                    document,
+                    target,
+                )
+                errors = [
+                    issue
+                    for issue in validate_snapshot(provisional)
+                    if issue.severity.value == "error"
+                ]
+                if errors:
+                    messages = "; ".join(issue.message for issue in errors)
+                    raise WordGatewayError(
+                        "Validation failed before save; changes were rolled back: "
+                        + messages
+                    )
 
                 document.Save()
+                saved = True
                 updated = self._snapshot_document_object(
                     session.application,
                     document,
                     target,
                 )
                 return updated, backup_path
+            except Exception:
+                if not saved and applied_operations:
+                    self._rollback_operations(document, applied_operations)
+                raise
             finally:
                 if owns_document:
                     try:
