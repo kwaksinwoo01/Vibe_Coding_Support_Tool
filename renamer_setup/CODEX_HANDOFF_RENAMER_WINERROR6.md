@@ -158,7 +158,7 @@ installs, and verifies it in actual ReNamer with multiple PDFs.
 - Repository: `kwaksinwoo01/Vibe_Coding_Support_Tool`
 - Branch policy: work directly on `main`; do not create a feature branch.
 - Project scope: `renamer_setup/`
-- Local build: Python 3.13.x, PyInstaller, NSIS
+- Local build: Python 3.14.6, PyInstaller, NSIS
 - Installed root: `%LOCALAPPDATA%\ReNamerDocumentClassifier`
 - ReNamer script: `%USERPROFILE%\Documents\den4b\ReNamer\Scripts\7.4_자동이름 변경 시스템.pas`
 
@@ -410,7 +410,7 @@ Use the existing deterministic build command:
 cd .\renamer_setup
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\build.ps1 `
-  -PythonPath "C:\Users\user\AppData\Local\Programs\Python\Python313\python.exe"
+  -PythonPath "C:\Program Files\Python314\python.exe"
 ```
 
 Before a clean build:

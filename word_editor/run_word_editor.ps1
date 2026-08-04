@@ -95,7 +95,7 @@ function Get-PythonCandidates {
         Get-ChildItem `
             -LiteralPath $root `
             -Directory `
-            -Filter 'Python3*' `
+            -Filter 'Python314' `
             -ErrorAction SilentlyContinue |
             Sort-Object Name -Descending |
             ForEach-Object {
@@ -112,16 +112,13 @@ function Get-PythonCandidates {
         $pyCommand.Source -notlike '*\Microsoft\WindowsApps\*'
     ) {
         try {
-            foreach ($line in @(& $pyCommand.Source -0p 2>$null)) {
-                $match = [regex]::Match(
-                    [string]$line,
-                    '([A-Za-z]:\\[^\r\n]*?python(?:\.exe)?)\s*$'
-                )
-                if ($match.Success) {
-                    Add-UniqueCandidate `
-                        -Candidates $candidates `
-                        -Candidate $match.Groups[1].Value
-                }
+            $launcherPath = @(
+                & $pyCommand.Source -V:3.14 -c 'import sys; print(sys.executable)' 2>$null
+            ) | Select-Object -Last 1
+            if ($LASTEXITCODE -eq 0) {
+                Add-UniqueCandidate `
+                    -Candidates $candidates `
+                    -Candidate ([string]$launcherPath).Trim()
             }
         }
         catch {}

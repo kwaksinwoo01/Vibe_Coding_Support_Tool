@@ -132,7 +132,7 @@ VS Code에서 수정할 때 오른쪽 아래 인코딩 표시를 눌러 **Save w
 ### 필요 도구
 
 - Windows 10 또는 Windows 11
-- Python 3.11~3.13
+- Python 3.14.6
 - NSIS 3.x
 - PowerShell 5.1 이상
 
@@ -157,14 +157,14 @@ All required installer sources use UTF-8 BOM.
 
 ### 3. 설치 파일 전체 빌드
 
-현재 저장소에서 Python 3.13 실제 경로를 지정해 7.4 설치 프로그램을 컴파일하는 권장 명령:
+현재 저장소에서 Python 3.14.6 실제 경로를 지정해 7.4 설치 프로그램을 컴파일하는 권장 명령:
 
 ```powershell
 cd C:\Users\user\Documents\github\Vibe_Coding_Support_Tool\renamer_setup
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\build.ps1 `
-  -PythonPath "C:\Users\user\AppData\Local\Programs\Python\Python313\python.exe"
+  -PythonPath "C:\Program Files\Python314\python.exe"
 ```
 
 이 명령은 인코딩 검사와 단위 테스트, `classifier.exe` 패키징, NSIS 컴파일을 순서대로 실행합니다. 에이전트가 빌드를 관찰할 필요 없이 개발자가 직접 실행하고 결과를 공유하는 협업 절차를 사용합니다.
@@ -180,7 +180,7 @@ private\correspondent.txt
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\build.ps1 `
-  -PythonPath "C:\Users\user\AppData\Local\Programs\Python\Python313\python.exe" `
+  -PythonPath "C:\Program Files\Python314\python.exe" `
   -CorrespondentFile "C:\private\correspondent.txt"
 ```
 
@@ -191,7 +191,7 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\build.ps1 `
-  -PythonPath "C:\Users\user\AppData\Local\Programs\Python\Python313\python.exe" `
+  -PythonPath "C:\Program Files\Python314\python.exe" `
   -SkipTests
 ```
 

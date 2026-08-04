@@ -6,6 +6,9 @@
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$env:PYTHONHOME = $null
+$env:PYTHONPATH = $null
+$RequiredPythonVersion = [version]'3.14.6'
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
@@ -104,11 +107,7 @@ function Test-PythonExecutable {
         return $false
     }
 
-    if ($parsedVersion.Major -ne 3) {
-        return $false
-    }
-
-    if ($parsedVersion.Minor -lt 11 -or $parsedVersion.Minor -gt 13) {
+    if ($parsedVersion -ne $RequiredPythonVersion) {
         return $false
     }
 
@@ -156,7 +155,7 @@ function Resolve-BuildPython {
         if (Test-PythonExecutable -Executable $explicitPath) {
             return (Resolve-Path -LiteralPath $explicitPath).Path
         }
-        throw ('The specified PythonPath is not a supported Python 3.11-3.13 executable: {0}' -f $explicitPath)
+        throw ('The specified PythonPath is not Python 3.14.6: {0}' -f $explicitPath)
     }
 
     if ($env:VIRTUAL_ENV) {
@@ -166,7 +165,7 @@ function Resolve-BuildPython {
         }
     }
 
-    foreach ($selector in @('-3.13', '-3.12', '-3.11', '-3')) {
+    foreach ($selector in @('-V:3.14', '-3.14')) {
         $launcherPython = Resolve-PythonFromLauncher -Selector $selector
         if ($launcherPython) {
             return $launcherPython
@@ -174,9 +173,8 @@ function Resolve-BuildPython {
     }
 
     $knownPaths = @(
-        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python311\python.exe')
+        (Join-Path $env:ProgramFiles 'Python314\python.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python314\python.exe')
     )
 
     foreach ($knownPath in $knownPaths) {
@@ -208,13 +206,13 @@ function Resolve-BuildPython {
 $BuildPython = Resolve-BuildPython
 if (-not $BuildPython) {
     throw @'
-실행 가능한 Python 3.11~3.13을 찾지 못했습니다.
+실행 가능한 Python 3.14.6을 찾지 못했습니다.
 
-Python 3.13의 실제 경로를 직접 지정해 다시 실행하세요.
-  .\scripts\build.ps1 -PythonPath "C:\Users\user\AppData\Local\Programs\Python\Python313\python.exe"
+Python 3.14.6의 실제 경로를 직접 지정해 다시 실행하세요.
+  .\scripts\build.ps1 -PythonPath "C:\Program Files\Python314\python.exe"
 
 경로 확인 명령:
-  py -3.13 -c "import sys; print(sys.executable)"
+  py -V:3.14 -c "import sys; print(sys.executable)"
 '@
 }
 
