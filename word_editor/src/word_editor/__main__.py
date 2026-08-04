@@ -10,7 +10,7 @@ from word_editor.config import EditorConfig
 from word_editor.infrastructure.robust_word_com import RobustWordComGateway
 from word_editor.infrastructure.snapshot_store import SnapshotStore
 from word_editor.services.editor_service import EditorService
-from word_editor.ui.main_window import MainWindow
+from word_editor.ui.application_window import ApplicationMainWindow
 
 
 def build_service(normal_path: Path | None = None) -> EditorService:
@@ -37,7 +37,7 @@ def build_service(normal_path: Path | None = None) -> EditorService:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Live editor and merge tool for Microsoft Word Normal.dotm"
+        description="Live editor and merge tool for Microsoft Word styles"
     )
     parser.add_argument(
         "--normal-path",
@@ -50,8 +50,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("word-editor requires Windows and desktop Microsoft Word.")
 
     application = QApplication(sys.argv[:1])
-    application.setApplicationName("Word Normal Style Editor")
-    window = MainWindow(build_service(args.normal_path))
+    application.setApplicationName("Word Style Editor")
+    window = ApplicationMainWindow(build_service(args.normal_path))
     window.show()
     return application.exec()
 
