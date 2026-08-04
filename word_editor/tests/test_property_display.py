@@ -19,6 +19,15 @@ def test_boolean_values_are_localized_and_parse_back() -> None:
     assert parse_property_value("style.hidden", "아니오", True) is False
 
 
+def test_word_boolean_integer_variants_are_normalized_for_display() -> None:
+    assert format_property_value("style.hidden", 1) == "예"
+    assert format_property_value("style.hidden", -1) == "예"
+    assert format_property_value("style.hidden", 0) == "아니오"
+    assert parse_property_value("style.hidden", "1", 0) is True
+    assert parse_property_value("style.hidden", "-1", 0) is True
+    assert parse_property_value("style.hidden", "0", 1) is False
+
+
 def test_enum_values_are_localized_and_parse_back() -> None:
     assert format_property_value("paragraph.alignment", 1) == "가운데 맞춤"
     assert parse_property_value(
