@@ -7,7 +7,7 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from word_editor.config import EditorConfig
-from word_editor.infrastructure.robust_word_com import RobustWordComGateway
+from word_editor.infrastructure.production_word_gateway import ProductionWordGateway
 from word_editor.infrastructure.snapshot_store import SnapshotStore
 from word_editor.services.company_template_lifecycle_service import (
     CompanyTemplateLifecycleService,
@@ -33,7 +33,7 @@ def build_services(
             backup_limit=config.backup_limit,
         )
     config.ensure_directories()
-    gateway = RobustWordComGateway(
+    gateway = ProductionWordGateway(
         normal_path=config.normal_path,
         backup_directory=config.backup_directory,
     )
