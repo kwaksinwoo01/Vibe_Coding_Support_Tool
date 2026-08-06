@@ -24,14 +24,6 @@ BOOLEAN_PROPERTY_NAMES = frozenset(
 
 
 def normalize_word_boolean(value: Any) -> bool | int | None | Any:
-    """Normalize Word/COM boolean variants without hiding unknown sentinels.
-
-    Word commonly uses VARIANT_BOOL values 0 and -1. pywin32 may expose the
-    same true value as Python True, which becomes integer 1 if converted before
-    checking its type. Both -1 and 1 therefore mean True at the application
-    boundary. Other numeric sentinels remain unchanged for inspection.
-    """
-
     if value is None:
         return None
     if isinstance(value, bool):
@@ -61,7 +53,6 @@ def normalize_style_properties(
 
 @dataclass(slots=True)
 class StyleDefinition:
-    # name remains the stable lookup key used by the current Word locale.
     name: str
     style_type: str
     built_in: bool
@@ -189,6 +180,9 @@ class MergePlan:
     conflicts: list[MergeConflict] = field(default_factory=list)
     added_styles: list[str] = field(default_factory=list)
     removed_styles: list[str] = field(default_factory=list)
+    added_style_definitions: dict[str, StyleDefinition] = field(
+        default_factory=dict
+    )
 
     @property
     def has_conflicts(self) -> bool:
