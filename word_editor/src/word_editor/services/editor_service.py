@@ -14,9 +14,13 @@ from word_editor.domain.models import (
     TemplateSnapshot,
     ValidationIssue,
 )
-from word_editor.domain.property_policy import assert_property_editable
+from word_editor.domain.property_policy import (
+    assert_property_editable,
+    property_policy,
+)
 from word_editor.domain.style_mutation import (
     CreateStyleRequest,
+    CreateStyleType,
     DeleteStyleRequest,
 )
 from word_editor.domain.validation import validate_snapshot
@@ -24,6 +28,7 @@ from word_editor.infrastructure.file_watcher import NormalTemplateWatcher
 from word_editor.infrastructure.snapshot_cache import SnapshotCache
 from word_editor.infrastructure.snapshot_store import SnapshotStore
 from word_editor.infrastructure.word_style_sdk import WordStyleSdkGateway
+from word_editor.services.fast_style_compare import FastStyleCompareService
 
 
 class EditorService:
@@ -37,6 +42,7 @@ class EditorService:
         self.gateway = gateway
         self.store = store
         self.cache = SnapshotCache(config.state_directory / "snapshot-cache")
+        self.fast_compare = FastStyleCompareService(gateway)
         self.target_path = config.normal_path.expanduser().resolve()
         self.current: TemplateSnapshot | None = None
         self.baseline: TemplateSnapshot | None = None
@@ -105,25 +111,16 @@ class EditorService:
         full: bool = False,
     ) -> TemplateSnapshot:
         mode = "full" if full else "index"
-        capture = (
-            lambda: self.gateway.snapshot_path(self.target_path)
-            if full
-            else lambda: self.gateway.snapshot_path_index(self.target_path)
-        )
-        # The conditional expression above would otherwise return a nested
-        # lambda in the index branch; keep the callable explicit.
         if full:
-            capture_callable = lambda: self.gateway.snapshot_path(
-                self.target_path
-            )
+            capture = lambda: self.gateway.snapshot_path(self.target_path)
         else:
-            capture_callable = lambda: self.gateway.snapshot_path_index(
+            capture = lambda: self.gateway.snapshot_path_index(
                 self.target_path
             )
         snapshot = self.cache.get_or_capture(
             self.target_path,
             mode,
-            capture_callable,
+            capture,
             force=force,
         )
         self.current = snapshot
@@ -168,8 +165,6 @@ class EditorService:
         return validate_snapshot(self._require_current())
 
     def export_snapshot(self, directory: Path) -> Path:
-        # Export is an explicit audit operation, so a complete snapshot is
-        # appropriate even though it is slower than the normal UI path.
         full_snapshot = self.refresh(force=True, full=True)
         safe_stem = "".join(
             character if character.isalnum() or character in "-_" else "-"
@@ -192,6 +187,8 @@ class EditorService:
         self,
         updates_by_style: dict[str, dict[str, Any]],
     ) -> TemplateSnapshot:
+        if not updates_by_style:
+            return self._require_current()
         self.ensure_style_details(list(updates_by_style))
         current = self._require_current()
         operations: list[PatchOperation] = []
@@ -212,6 +209,8 @@ class EditorService:
                         expected_old_value=old,
                     )
                 )
+        if not operations:
+            return current
 
         updated, backup = self.gateway.apply_operations_fast(
             self.target_path,
@@ -269,12 +268,19 @@ class EditorService:
         return updated
 
     def compare_document(self, document_path: Path) -> MergePlan:
+        incoming_path = document_path.expanduser().resolve()
+        fast_plan = self.fast_compare.compare_or_none(
+            self.target_path,
+            incoming_path,
+        )
+        if fast_plan is not None:
+            return fast_plan
+
         target = self.cache.get_or_capture(
             self.target_path,
             "full",
             lambda: self.gateway.snapshot_path(self.target_path),
         )
-        incoming_path = document_path.expanduser().resolve()
         document = self.cache.get_or_capture(
             incoming_path,
             "full",
@@ -282,16 +288,37 @@ class EditorService:
         )
         baseline = self.baseline or target
         if baseline.metadata.get("snapshot_mode") == "index":
-            # The first fast-load session has no historic full baseline. Use the
-            # current full snapshot as the neutral base for this comparison.
             baseline = target
         self.current = target
         return three_way_merge(baseline, target, document)
 
+    @staticmethod
+    def _create_type(style_type: str) -> CreateStyleType:
+        return {
+            "Character": CreateStyleType.CHARACTER,
+            "Table": CreateStyleType.TABLE,
+            "List": CreateStyleType.LIST,
+        }.get(style_type, CreateStyleType.PARAGRAPH)
+
     def apply_merge_plan(self, plan: MergePlan) -> TemplateSnapshot:
+        current = self._require_current()
+        for style_name in plan.added_styles:
+            if style_name in current.styles:
+                continue
+            definition = plan.added_style_definitions.get(style_name)
+            if definition is None:
+                continue
+            current = self.create_style(
+                CreateStyleRequest(
+                    name=style_name,
+                    style_type=self._create_type(definition.style_type),
+                )
+            )
+
         updates: dict[str, dict[str, Any]] = {
             style_name: dict(properties)
             for style_name, properties in plan.automatic_values.items()
+            if style_name in self._require_current().styles
         }
         for conflict in plan.conflicts:
             if conflict.choice is ConflictChoice.USE_DOCUMENT:
@@ -305,7 +332,23 @@ class EditorService:
             updates.setdefault(conflict.style_name, {})[
                 conflict.property_name
             ] = value
-        return self.apply_style_updates_many(updates)
+
+        if updates:
+            self.ensure_style_details(list(updates))
+            current = self._require_current()
+            safe_updates: dict[str, dict[str, Any]] = {}
+            for style_name, properties in updates.items():
+                style = current.styles.get(style_name)
+                if style is None:
+                    continue
+                for property_name, value in properties.items():
+                    if property_policy(style, property_name).editable:
+                        safe_updates.setdefault(style_name, {})[
+                            property_name
+                        ] = value
+            if safe_updates:
+                return self.apply_style_updates_many(safe_updates)
+        return self._require_current()
 
     def inject_selected_styles(
         self,
