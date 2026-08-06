@@ -166,6 +166,15 @@ class TemplateInventoryReader:
                 read_only=True,
             )
             try:
+                try:
+                    # Word loads Building Blocks lazily; force all currently
+                    # available templates to populate their galleries now.
+                    session.application.Templates.LoadBuildingBlocks()
+                except (pywintypes.com_error, AttributeError) as exc:
+                    warnings.append(
+                        "Word가 Building Block 강제 로드를 거부했습니다. "
+                        f"현재 로드 상태로 인벤토리를 계속합니다: {exc}"
+                    )
                 template = self._find_template_object(
                     session.application,
                     target,
