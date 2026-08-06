@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import struct
 import sys
+import threading
 from typing import Any, Iterator
 import winreg
 
@@ -20,6 +21,7 @@ from word_editor.infrastructure.word_com import (
 )
 
 REGDB_E_CLASSNOTREG = -2147221164
+RPC_E_DISCONNECTED = -2147417848
 WORD_PROGID = "Word.Application"
 
 
@@ -151,56 +153,110 @@ def format_word_com_diagnostics(attempts: list[tuple[str, BaseException]]) -> st
 
 
 class RobustWordComGateway(EditableWordComGateway):
-    """Editable Word gateway with architecture-aware COM diagnostics."""
+    """Editable Word gateway with a reusable UI-thread COM application.
 
-    @contextmanager
-    def _session(self) -> Iterator[_WordSession]:
-        pythoncom.CoInitialize()
+    Word startup is one of the largest costs in the editor. The application
+    created on the gateway's owner thread is kept alive until ``close()``. COM
+    objects are never shared with worker threads; a worker still receives a
+    short-lived application in its own apartment.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._owner_thread_id = threading.get_ident()
+        self._persistent_application: Any = None
+        self._persistent_owns_application = False
+        self._persistent_com_initialized = False
+
+    @staticmethod
+    def _configure_application(application: Any, owns_application: bool) -> None:
+        if owns_application:
+            application.Visible = False
+        application.DisplayAlerts = WD_ALERTS_NONE
+        try:
+            application.Options.SaveNormalPrompt = False
+        except pywintypes.com_error:
+            pass
+        try:
+            application.ScreenUpdating = False
+        except pywintypes.com_error:
+            pass
+
+    def _create_application(self) -> tuple[Any, bool]:
         application: Any = None
         owns_application = False
         attempts: list[tuple[str, BaseException]] = []
 
         try:
-            try:
-                application = win32com.client.GetActiveObject(WORD_PROGID)
-            except (pywintypes.com_error, AttributeError) as exc:
-                attempts.append(("GetActiveObject", exc))
+            application = win32com.client.GetActiveObject(WORD_PROGID)
+        except (pywintypes.com_error, AttributeError) as exc:
+            attempts.append(("GetActiveObject", exc))
 
-            if application is None:
-                factories = (
-                    ("DispatchEx", win32com.client.DispatchEx),
-                    ("Dispatch", win32com.client.Dispatch),
-                    ("EnsureDispatch", win32com.client.gencache.EnsureDispatch),
-                )
-                for name, factory in factories:
-                    try:
-                        application = factory(WORD_PROGID)
-                        owns_application = True
-                        break
-                    except (pywintypes.com_error, AttributeError) as exc:
-                        attempts.append((name, exc))
+        if application is None:
+            factories = (
+                ("DispatchEx", win32com.client.DispatchEx),
+                ("Dispatch", win32com.client.Dispatch),
+                ("EnsureDispatch", win32com.client.gencache.EnsureDispatch),
+            )
+            for name, factory in factories:
+                try:
+                    application = factory(WORD_PROGID)
+                    owns_application = True
+                    break
+                except (pywintypes.com_error, AttributeError) as exc:
+                    attempts.append((name, exc))
 
-            if application is None:
-                if any(
-                    getattr(exc, "hresult", None) == REGDB_E_CLASSNOTREG
-                    for _, exc in attempts
-                ):
-                    raise WordGatewayError(format_word_com_diagnostics(attempts))
-                details = "\n".join(
-                    f"- {name}: {exc}" for name, exc in attempts
-                )
-                raise WordGatewayError(
-                    "Microsoft Word COM 서버를 만들지 못했습니다.\n" + details
-                )
+        if application is None:
+            if any(
+                getattr(exc, "hresult", None) == REGDB_E_CLASSNOTREG
+                for _, exc in attempts
+            ):
+                raise WordGatewayError(format_word_com_diagnostics(attempts))
+            details = "\n".join(f"- {name}: {exc}" for name, exc in attempts)
+            raise WordGatewayError(
+                "Microsoft Word COM 서버를 만들지 못했습니다.\n" + details
+            )
 
-            if owns_application:
-                application.Visible = False
-            application.DisplayAlerts = WD_ALERTS_NONE
-            try:
-                application.Options.SaveNormalPrompt = False
-            except pywintypes.com_error:
-                pass
+        self._configure_application(application, owns_application)
+        return application, owns_application
 
+    @staticmethod
+    def _application_alive(application: Any) -> bool:
+        try:
+            _ = application.Version
+            return True
+        except (pywintypes.com_error, AttributeError):
+            return False
+
+    def _persistent_session(self) -> _WordSession:
+        if not self._persistent_com_initialized:
+            pythoncom.CoInitialize()
+            self._persistent_com_initialized = True
+        if (
+            self._persistent_application is None
+            or not self._application_alive(self._persistent_application)
+        ):
+            self._persistent_application = None
+            self._persistent_owns_application = False
+            application, owns_application = self._create_application()
+            self._persistent_application = application
+            self._persistent_owns_application = owns_application
+        return _WordSession(
+            self._persistent_application,
+            self._persistent_owns_application,
+        )
+
+    @contextmanager
+    def _session(self) -> Iterator[_WordSession]:
+        if threading.get_ident() == self._owner_thread_id:
+            yield self._persistent_session()
+            return
+
+        pythoncom.CoInitialize()
+        application: Any = None
+        owns_application = False
+        try:
+            application, owns_application = self._create_application()
             yield _WordSession(application, owns_application)
         finally:
             if application is not None and owns_application:
@@ -212,4 +268,27 @@ class RobustWordComGateway(EditableWordComGateway):
                     except pywintypes.com_error:
                         pass
             application = None
+            pythoncom.CoUninitialize()
+
+    def close(self) -> None:
+        """Release the UI-thread Word application owned by this program."""
+
+        if threading.get_ident() != self._owner_thread_id:
+            return
+        application = self._persistent_application
+        owns_application = self._persistent_owns_application
+        self._persistent_application = None
+        self._persistent_owns_application = False
+        if application is not None and owns_application:
+            try:
+                application.Quit(SaveChanges=WD_DO_NOT_SAVE_CHANGES)
+            except pywintypes.com_error as exc:
+                if getattr(exc, "hresult", None) != RPC_E_DISCONNECTED:
+                    try:
+                        application.Quit()
+                    except pywintypes.com_error:
+                        pass
+        application = None
+        if self._persistent_com_initialized:
+            self._persistent_com_initialized = False
             pythoncom.CoUninitialize()
