@@ -13,7 +13,7 @@ from word_editor.services.editor_service import EditorService
 from word_editor.services.template_lifecycle_service import (
     TemplateLifecycleService,
 )
-from word_editor.ui.application_window import ApplicationMainWindow
+from word_editor.ui.company_template_window import CompanyTemplateWindow
 
 
 def build_services(
@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     application = QApplication(sys.argv[:1])
     application.setApplicationName("Company Word Template Manager")
     editor_service, lifecycle_service = build_services(args.normal_path)
-    window = ApplicationMainWindow(editor_service, lifecycle_service)
+    window = CompanyTemplateWindow(editor_service, lifecycle_service)
     window.show()
     return application.exec()
 
