@@ -9,11 +9,14 @@ from PySide6.QtWidgets import QApplication
 from word_editor.config import EditorConfig
 from word_editor.infrastructure.robust_word_com import RobustWordComGateway
 from word_editor.infrastructure.snapshot_store import SnapshotStore
-from word_editor.services.editor_service import EditorService
-from word_editor.services.template_lifecycle_service import (
-    TemplateLifecycleService,
+from word_editor.services.company_template_lifecycle_service import (
+    CompanyTemplateLifecycleService,
 )
-from word_editor.ui.style_management_window import StyleManagementWindow
+from word_editor.services.editor_service import EditorService
+from word_editor.services.template_lifecycle_service import TemplateLifecycleService
+from word_editor.ui.header_footer_management_window import (
+    HeaderFooterManagementWindow,
+)
 
 
 def build_services(
@@ -40,7 +43,7 @@ def build_services(
         gateway=gateway,
         store=snapshot_store,
     )
-    lifecycle_service = TemplateLifecycleService(
+    lifecycle_service = CompanyTemplateLifecycleService(
         config=config,
         gateway=gateway,
         snapshot_store=snapshot_store,
@@ -72,7 +75,10 @@ def main(argv: list[str] | None = None) -> int:
     application = QApplication(sys.argv[:1])
     application.setApplicationName("Company Word Template Manager")
     editor_service, lifecycle_service = build_services(args.normal_path)
-    window = StyleManagementWindow(editor_service, lifecycle_service)
+    window = HeaderFooterManagementWindow(
+        editor_service,
+        lifecycle_service,
+    )
     window.show()
     return application.exec()
 
