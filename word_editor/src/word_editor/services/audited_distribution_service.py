@@ -69,7 +69,7 @@ if (Test-Path -LiteralPath $NormalPath) {{
 Copy-Item -LiteralPath $sourceNormal -Destination $NormalPath -Force
 $assetSourceRoot = Join-Path $packageRoot "CompanyTemplates"
 $normalTemplateAssetRoot = Join-Path $targetDirectory "CompanyTemplates"
-$wordStartupAssetRoot = Join-Path $env:APPDATA "Microsoft\\Word\\STARTUP\\CompanyTemplates"
+$wordStartupAssetRoot = Join-Path $env:APPDATA "Microsoft\\Word\\STARTUP"
 foreach ($asset in @($manifest.assets)) {{
     $source = Join-Path $assetSourceRoot $asset.file_name
     if (-not (Test-Path -LiteralPath $source)) {{
@@ -131,7 +131,7 @@ def create_audited_distribution_package(
         manifest["installation_policy"] = {
             "normal_dotm": "%APPDATA%/Microsoft/Templates/Normal.dotm",
             "global_building_block_templates": (
-                "%APPDATA%/Microsoft/Word/STARTUP/CompanyTemplates"
+                "%APPDATA%/Microsoft/Word/STARTUP"
             ),
             "other_company_templates": (
                 "%APPDATA%/Microsoft/Templates/CompanyTemplates"
