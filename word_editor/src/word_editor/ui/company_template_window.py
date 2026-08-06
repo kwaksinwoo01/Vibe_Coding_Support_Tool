@@ -1,10 +1,24 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPushButton
+from datetime import datetime
+from pathlib import Path
+
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+)
 
 from word_editor.services.asset_review_service import (
     approve_registered_asset_update,
     review_registered_asset,
+)
+from word_editor.services.audited_distribution_service import (
+    UnapprovedDistributionChanges,
+    create_audited_distribution_package,
 )
 from word_editor.services.editor_service import EditorService
 from word_editor.services.template_lifecycle_service import TemplateLifecycleService
@@ -52,6 +66,15 @@ class CompanyTemplateWindow(ApplicationMainWindow):
 
     def register_template_asset(self) -> None:
         super().register_template_asset()
+        self._refresh_asset_summary()
+
+    def review_and_save_current_changes(self) -> None:
+        super().review_and_save_current_changes()
+        self._reload_profile_combo()
+
+    def activate_selected_profile(self) -> None:
+        super().activate_selected_profile()
+        self._reload_profile_combo()
         self._refresh_asset_summary()
 
     def review_and_update_registered_asset(self) -> None:
@@ -133,9 +156,61 @@ class CompanyTemplateWindow(ApplicationMainWindow):
             str(version_directory),
         )
 
+    def create_distribution_package(self) -> None:
+        profile_id = self._selected_profile_id()
+        if not profile_id:
+            return
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "배포 패키지 저장 폴더",
+            str(Path.home() / "Desktop"),
+        )
+        if not directory:
+            return
+        version_label, accepted = QInputDialog.getText(
+            self,
+            "배포 버전",
+            "버전명:",
+            text=datetime.now().strftime("%Y.%m.%d"),
+        )
+        if not accepted or not version_label.strip():
+            return
+        note, accepted = QInputDialog.getText(
+            self,
+            "배포 메모",
+            "배포 설명(선택):",
+        )
+        if not accepted:
+            return
+        try:
+            package = create_audited_distribution_package(
+                self.lifecycle,
+                profile_id,
+                Path(directory),
+                version_label,
+                note,
+            )
+        except UnapprovedDistributionChanges as exc:
+            message = QMessageBox(self)
+            message.setIcon(QMessageBox.Icon.Warning)
+            message.setWindowTitle("미승인 변경으로 배포 중단")
+            message.setText(str(exc))
+            message.setDetailedText("\n".join(exc.report.summary_lines()))
+            message.exec()
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, "배포 패키지 생성 실패", str(exc))
+            return
+        QMessageBox.information(
+            self,
+            "감사 가능한 배포 패키지 생성 완료",
+            str(package),
+        )
+
     def _on_external_change(self) -> None:
         super()._on_external_change()
-        self.active_profile_label.setText(
-            self.active_profile_label.text()
-            + " · 외부 변경 감지: 검증 필요"
-        )
+        marker = " · 외부 변경 감지: 검증 필요"
+        if marker not in self.active_profile_label.text():
+            self.active_profile_label.setText(
+                self.active_profile_label.text() + marker
+            )
