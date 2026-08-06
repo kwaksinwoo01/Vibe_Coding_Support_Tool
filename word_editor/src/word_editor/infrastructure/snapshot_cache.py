@@ -15,25 +15,43 @@ from word_editor.domain.models import TemplateSnapshot
 class FileFingerprint:
     size: int
     modified_ns: int
+    content_sha256: str
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest()
 
     @classmethod
     def capture(cls, path: Path) -> "FileFingerprint":
         stat = path.stat()
-        return cls(size=int(stat.st_size), modified_ns=int(stat.st_mtime_ns))
+        return cls(
+            size=int(stat.st_size),
+            modified_ns=int(stat.st_mtime_ns),
+            content_sha256=cls._sha256(path),
+        )
 
-    def to_dict(self) -> dict[str, int]:
-        return {"size": self.size, "modified_ns": self.modified_ns}
+    def to_dict(self) -> dict[str, int | str]:
+        return {
+            "size": self.size,
+            "modified_ns": self.modified_ns,
+            "content_sha256": self.content_sha256,
+        }
 
     @classmethod
     def from_dict(cls, value: dict[str, object]) -> "FileFingerprint":
         return cls(
             size=int(value.get("size", -1)),
             modified_ns=int(value.get("modified_ns", -1)),
+            content_sha256=str(value.get("content_sha256", "")),
         )
 
 
 class SnapshotCache:
-    """Disk-backed cache keyed by resolved Word file path and file metadata."""
+    """Disk-backed cache verified by path, metadata, and file SHA-256."""
 
     def __init__(self, directory: Path) -> None:
         self.directory = directory
