@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+import time
 from typing import Callable
 
 from word_editor.domain.models import TemplateSnapshot
@@ -32,12 +33,7 @@ class FileFingerprint:
 
 
 class SnapshotCache:
-    """Disk-backed cache keyed by resolved Word file path and file metadata.
-
-    The cache avoids reopening Word when the underlying document/template has
-    not changed. It never treats the cache as authoritative after a file-size or
-    modification-time change.
-    """
+    """Disk-backed cache keyed by resolved Word file path and file metadata."""
 
     def __init__(self, directory: Path) -> None:
         self.directory = directory
@@ -101,13 +97,28 @@ class SnapshotCache:
         *,
         force: bool = False,
     ) -> TemplateSnapshot:
+        started = time.perf_counter()
         if not force:
             cached = self.load(source, mode)
             if cached is not None:
                 cached.metadata["cache_hit"] = True
+                cached.metadata["load_source"] = "disk-cache"
+                cached.metadata["load_mode"] = mode
+                cached.metadata["load_duration_ms"] = round(
+                    (time.perf_counter() - started) * 1000,
+                    2,
+                )
                 return cached
         snapshot = capture()
         snapshot.metadata["cache_hit"] = False
+        snapshot.metadata["load_source"] = (
+            "word-full-scan" if mode == "full" else "word-fast-index"
+        )
+        snapshot.metadata["load_mode"] = mode
+        snapshot.metadata["load_duration_ms"] = round(
+            (time.perf_counter() - started) * 1000,
+            2,
+        )
         self.save(source, mode, snapshot)
         return snapshot
 
