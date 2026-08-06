@@ -15,22 +15,28 @@ from word_editor.domain.models import (
     ValidationIssue,
 )
 from word_editor.domain.property_policy import assert_property_editable
+from word_editor.domain.style_mutation import (
+    CreateStyleRequest,
+    DeleteStyleRequest,
+)
 from word_editor.domain.validation import validate_snapshot
 from word_editor.infrastructure.file_watcher import NormalTemplateWatcher
+from word_editor.infrastructure.snapshot_cache import SnapshotCache
 from word_editor.infrastructure.snapshot_store import SnapshotStore
-from word_editor.infrastructure.editable_word_com import EditableWordComGateway
+from word_editor.infrastructure.word_style_sdk import WordStyleSdkGateway
 
 
 class EditorService:
     def __init__(
         self,
         config: EditorConfig,
-        gateway: EditableWordComGateway,
+        gateway: WordStyleSdkGateway,
         store: SnapshotStore,
     ) -> None:
         self.config = config
         self.gateway = gateway
         self.store = store
+        self.cache = SnapshotCache(config.state_directory / "snapshot-cache")
         self.target_path = config.normal_path.expanduser().resolve()
         self.current: TemplateSnapshot | None = None
         self.baseline: TemplateSnapshot | None = None
@@ -66,7 +72,7 @@ class EditorService:
         return self._load_target_state()
 
     def _load_target_state(self) -> TemplateSnapshot:
-        current = self.refresh()
+        current = self.refresh(force=False)
         baseline_path = self._baseline_path_for_target()
         if baseline_path.exists():
             self.baseline = self.store.load(baseline_path)
@@ -77,7 +83,7 @@ class EditorService:
     def select_target(self, path: Path) -> TemplateSnapshot:
         target = path.expanduser().resolve()
         if target == self.target_path:
-            return self.refresh()
+            return self.refresh(force=False)
         was_watching = self._watcher is not None
         callback = self._watch_callback
         self.stop_watching()
@@ -92,9 +98,62 @@ class EditorService:
     def select_normal_target(self) -> TemplateSnapshot:
         return self.select_target(self.config.normal_path)
 
-    def refresh(self) -> TemplateSnapshot:
-        self.current = self.gateway.snapshot_path(self.target_path)
-        return self.current
+    def refresh(
+        self,
+        *,
+        force: bool = False,
+        full: bool = False,
+    ) -> TemplateSnapshot:
+        mode = "full" if full else "index"
+        capture = (
+            lambda: self.gateway.snapshot_path(self.target_path)
+            if full
+            else lambda: self.gateway.snapshot_path_index(self.target_path)
+        )
+        # The conditional expression above would otherwise return a nested
+        # lambda in the index branch; keep the callable explicit.
+        if full:
+            capture_callable = lambda: self.gateway.snapshot_path(
+                self.target_path
+            )
+        else:
+            capture_callable = lambda: self.gateway.snapshot_path_index(
+                self.target_path
+            )
+        snapshot = self.cache.get_or_capture(
+            self.target_path,
+            mode,
+            capture_callable,
+            force=force,
+        )
+        self.current = snapshot
+        return snapshot
+
+    def ensure_style_details(
+        self,
+        style_names: list[str] | tuple[str, ...],
+    ) -> TemplateSnapshot:
+        current = self._require_current()
+        requested = list(dict.fromkeys(style_names))
+        loaded = set(current.metadata.get("details_loaded", []))
+        missing = [
+            name
+            for name in requested
+            if name in current.styles
+            and (
+                name not in loaded
+                or len(current.styles[name].properties) <= 3
+            )
+        ]
+        if not missing:
+            return current
+        details = self.gateway.read_style_details(self.target_path, missing)
+        for name, definition in details.items():
+            current.styles[name] = definition
+            loaded.add(name)
+        current.metadata["details_loaded"] = sorted(loaded, key=str.casefold)
+        self.cache.save(self.target_path, "index", current)
+        return current
 
     def accept_as_baseline(
         self,
@@ -109,12 +168,15 @@ class EditorService:
         return validate_snapshot(self._require_current())
 
     def export_snapshot(self, directory: Path) -> Path:
+        # Export is an explicit audit operation, so a complete snapshot is
+        # appropriate even though it is slower than the normal UI path.
+        full_snapshot = self.refresh(force=True, full=True)
         safe_stem = "".join(
             character if character.isalnum() or character in "-_" else "-"
             for character in self.target_path.stem
         ).strip("-") or "word-file"
         return self.store.save_timestamped(
-            self._require_current(),
+            full_snapshot,
             directory,
             prefix=f"{safe_stem}-all-styles",
         )
@@ -130,6 +192,7 @@ class EditorService:
         self,
         updates_by_style: dict[str, dict[str, Any]],
     ) -> TemplateSnapshot:
+        self.ensure_style_details(list(updates_by_style))
         current = self._require_current()
         operations: list[PatchOperation] = []
         for style_name, updates in updates_by_style.items():
@@ -150,44 +213,82 @@ class EditorService:
                     )
                 )
 
-        updated, backup = self.gateway.apply_operations_to_path(
+        updated, backup = self.gateway.apply_operations_fast(
             self.target_path,
             operations,
-            expected_snapshot_sha256=current.sha256,
-            expected_styles_sha256=str(
-                current.metadata.get("styles_sha256") or current.sha256
+            expected_file_size=self._metadata_int(current, "file_size"),
+            expected_modified_ns=self._metadata_int(
+                current,
+                "file_modified_ns",
             ),
         )
         self.current = updated
         if backup:
             self._last_backup = backup
+        self.cache.invalidate(self.target_path)
+        self.cache.save(self.target_path, "index", updated)
+        self.accept_as_baseline(updated)
+        return updated
 
-        errors = [
-            issue
-            for issue in validate_snapshot(updated)
-            if issue.severity.value == "error"
-        ]
-        if errors:
-            if self._last_backup is not None:
-                self.gateway.restore_backup_to_target(
-                    self._last_backup,
-                    self.target_path,
-                )
-                self.refresh()
-            messages = "; ".join(issue.message for issue in errors)
-            raise RuntimeError(f"Validation failed; backup restored: {messages}")
+    @staticmethod
+    def _metadata_int(snapshot: TemplateSnapshot, name: str) -> int | None:
+        value = snapshot.metadata.get(name)
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
 
+    def create_style(self, request: CreateStyleRequest) -> TemplateSnapshot:
+        current = self._require_current()
+        updated, backup = self.gateway.create_style_on_path(
+            self.target_path,
+            request,
+            current,
+        )
+        self.current = updated
+        if backup:
+            self._last_backup = backup
+        self.cache.invalidate(self.target_path)
+        self.cache.save(self.target_path, "index", updated)
+        self.accept_as_baseline(updated)
+        return updated
+
+    def delete_styles(self, request: DeleteStyleRequest) -> TemplateSnapshot:
+        current = self._require_current()
+        updated, backup = self.gateway.delete_styles_on_path(
+            self.target_path,
+            request,
+            current,
+        )
+        self.current = updated
+        if backup:
+            self._last_backup = backup
+        self.cache.invalidate(self.target_path)
+        self.cache.save(self.target_path, "index", updated)
         self.accept_as_baseline(updated)
         return updated
 
     def compare_document(self, document_path: Path) -> MergePlan:
-        baseline = self.baseline or self._require_current()
-        target = self.refresh()
-        document = self.gateway.snapshot_document(document_path)
+        target = self.cache.get_or_capture(
+            self.target_path,
+            "full",
+            lambda: self.gateway.snapshot_path(self.target_path),
+        )
+        incoming_path = document_path.expanduser().resolve()
+        document = self.cache.get_or_capture(
+            incoming_path,
+            "full",
+            lambda: self.gateway.snapshot_path(incoming_path),
+        )
+        baseline = self.baseline or target
+        if baseline.metadata.get("snapshot_mode") == "index":
+            # The first fast-load session has no historic full baseline. Use the
+            # current full snapshot as the neutral base for this comparison.
+            baseline = target
+        self.current = target
         return three_way_merge(baseline, target, document)
 
     def apply_merge_plan(self, plan: MergePlan) -> TemplateSnapshot:
-        current = self._require_current()
         updates: dict[str, dict[str, Any]] = {
             style_name: dict(properties)
             for style_name, properties in plan.automatic_values.items()
@@ -216,16 +317,18 @@ class EditorService:
             document_path,
             style_names,
         )
+        self.cache.invalidate(document_path)
 
     def update_all_document_styles(self, document_path: Path) -> None:
         if self.is_normal_target:
             self.gateway.update_document_from_normal(document_path)
-            return
-        self.gateway.inject_styles(
-            self.target_path,
-            document_path,
-            list(self._require_current().styles),
-        )
+        else:
+            self.gateway.inject_styles(
+                self.target_path,
+                document_path,
+                list(self._require_current().styles),
+            )
+        self.cache.invalidate(document_path)
 
     def start_watching(self, callback: Callable[[], None]) -> None:
         self._watch_callback = callback
@@ -247,6 +350,12 @@ class EditorService:
         if self.baseline is None:
             return {}
         return changed_properties(self.baseline, self._require_current())
+
+    def close(self) -> None:
+        self.stop_watching()
+        close_gateway = getattr(self.gateway, "close", None)
+        if callable(close_gateway):
+            close_gateway()
 
     def _require_current(self) -> TemplateSnapshot:
         if self.current is None:
