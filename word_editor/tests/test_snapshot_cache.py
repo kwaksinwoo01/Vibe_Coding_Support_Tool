@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from word_editor.domain.models import TemplateSnapshot
@@ -24,6 +25,26 @@ def test_cache_loads_only_unchanged_file(tmp_path: Path) -> None:
     assert loaded.sha256 == "snapshot"
 
     source.write_bytes(b"changed-size")
+    assert cache.load(source, "index") is None
+
+
+def test_cache_rejects_same_size_and_timestamp_with_different_content(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "Normal.dotm"
+    source.write_bytes(b"DCM1")
+    original_stat = source.stat()
+    cache = SnapshotCache(tmp_path / "cache")
+    cache.save(source, "index", make_snapshot(source))
+
+    source.write_bytes(b"FDM2")
+    os.utime(
+        source,
+        ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+    )
+
+    assert source.stat().st_size == original_stat.st_size
+    assert source.stat().st_mtime_ns == original_stat.st_mtime_ns
     assert cache.load(source, "index") is None
 
 
