@@ -10,10 +10,15 @@ from word_editor.config import EditorConfig
 from word_editor.infrastructure.robust_word_com import RobustWordComGateway
 from word_editor.infrastructure.snapshot_store import SnapshotStore
 from word_editor.services.editor_service import EditorService
+from word_editor.services.template_lifecycle_service import (
+    TemplateLifecycleService,
+)
 from word_editor.ui.application_window import ApplicationMainWindow
 
 
-def build_service(normal_path: Path | None = None) -> EditorService:
+def build_services(
+    normal_path: Path | None = None,
+) -> tuple[EditorService, TemplateLifecycleService]:
     config = EditorConfig.default()
     if normal_path is not None:
         config = EditorConfig(
@@ -25,19 +30,34 @@ def build_service(normal_path: Path | None = None) -> EditorService:
             backup_limit=config.backup_limit,
         )
     config.ensure_directories()
-    return EditorService(
-        config=config,
-        gateway=RobustWordComGateway(
-            normal_path=config.normal_path,
-            backup_directory=config.backup_directory,
-        ),
-        store=SnapshotStore(),
+    gateway = RobustWordComGateway(
+        normal_path=config.normal_path,
+        backup_directory=config.backup_directory,
     )
+    snapshot_store = SnapshotStore()
+    editor_service = EditorService(
+        config=config,
+        gateway=gateway,
+        store=snapshot_store,
+    )
+    lifecycle_service = TemplateLifecycleService(
+        config=config,
+        gateway=gateway,
+        snapshot_store=snapshot_store,
+    )
+    return editor_service, lifecycle_service
+
+
+def build_service(normal_path: Path | None = None) -> EditorService:
+    """Compatibility helper for tests and callers that need only the editor."""
+
+    editor_service, _ = build_services(normal_path)
+    return editor_service
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Live editor and merge tool for Microsoft Word styles"
+        description="Live editor and lifecycle manager for Microsoft Word templates"
     )
     parser.add_argument(
         "--normal-path",
@@ -50,8 +70,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("word-editor requires Windows and desktop Microsoft Word.")
 
     application = QApplication(sys.argv[:1])
-    application.setApplicationName("Word Style Editor")
-    window = ApplicationMainWindow(build_service(args.normal_path))
+    application.setApplicationName("Company Word Template Manager")
+    editor_service, lifecycle_service = build_services(args.normal_path)
+    window = ApplicationMainWindow(editor_service, lifecycle_service)
     window.show()
     return application.exec()
 
