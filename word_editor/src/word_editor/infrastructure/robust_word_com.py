@@ -12,7 +12,9 @@ import pythoncom
 import pywintypes
 import win32com.client
 
-from word_editor.infrastructure.word_style_sdk import WordStyleSdkGateway
+from word_editor.infrastructure.safe_backup_style_gateway import (
+    SafeBackupStyleGateway,
+)
 from word_editor.infrastructure.word_com import (
     WD_ALERTS_NONE,
     WD_DO_NOT_SAVE_CHANGES,
@@ -152,8 +154,8 @@ def format_word_com_diagnostics(attempts: list[tuple[str, BaseException]]) -> st
     )
 
 
-class RobustWordComGateway(WordStyleSdkGateway):
-    """Word style SDK with architecture diagnostics and UI-thread reuse."""
+class RobustWordComGateway(SafeBackupStyleGateway):
+    """Word style SDK with safe backup, COM diagnostics, and UI reuse."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
