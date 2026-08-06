@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPushButton
 
-from word_editor.services.asset_review_service import review_registered_asset
+from word_editor.services.asset_review_service import (
+    approve_registered_asset_update,
+    review_registered_asset,
+)
 from word_editor.services.editor_service import EditorService
 from word_editor.services.template_lifecycle_service import TemplateLifecycleService
 from word_editor.ui.application_window import ApplicationMainWindow
@@ -114,8 +117,10 @@ class CompanyTemplateWindow(ApplicationMainWindow):
         if not accepted:
             return
         try:
-            version_directory = self.lifecycle.update_registered_asset(
+            version_directory = approve_registered_asset_update(
+                self.lifecycle,
                 asset.asset_id,
+                report,
                 note,
             )
         except Exception as exc:
@@ -126,4 +131,11 @@ class CompanyTemplateWindow(ApplicationMainWindow):
             self,
             "템플릿 자산 버전 저장 완료",
             str(version_directory),
+        )
+
+    def _on_external_change(self) -> None:
+        super()._on_external_change()
+        self.active_profile_label.setText(
+            self.active_profile_label.text()
+            + " · 외부 변경 감지: 검증 필요"
         )
