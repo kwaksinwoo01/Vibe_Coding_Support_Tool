@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from word_editor.domain.diff import changed_properties
@@ -67,3 +68,18 @@ def review_registered_asset(
         removed_autotext=removed_autotext,
         warnings=warnings,
     )
+
+
+def approve_registered_asset_update(
+    lifecycle: TemplateLifecycleService,
+    asset_id: str,
+    report: TemplateChangeReport,
+    note: str = "",
+) -> Path:
+    version_directory = lifecycle.update_registered_asset(asset_id, note)
+    report_path = version_directory / "change-report.json"
+    report_path.write_text(
+        json.dumps(report.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8-sig",
+    )
+    return version_directory
