@@ -27,6 +27,10 @@ class TemplateInventoryReader:
         return digest.hexdigest()
 
     @staticmethod
+    def _text_sha256(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+    @staticmethod
     def _same_path(left: Path, right: Path) -> bool:
         try:
             return left.resolve() == right.resolve()
@@ -75,6 +79,14 @@ class TemplateInventoryReader:
                 category_name = self._safe_value(category, "Name", "")
                 name = str(self._safe_value(entry, "Name", ""))
                 block_type = self._safe_value(entry, "Type")
+                raw_value = self._safe_value(entry, "Value", None)
+                if raw_value is None:
+                    value_length: int | None = None
+                    value_sha256 = ""
+                else:
+                    text_value = str(raw_value)
+                    value_length = len(text_value)
+                    value_sha256 = self._text_sha256(text_value)
                 record = {
                     "key": f"{name}|{block_type}|{category_name}",
                     "name": name,
@@ -87,6 +99,9 @@ class TemplateInventoryReader:
                         entry,
                         "InsertOptions",
                     ),
+                    # Preserve only a fingerprint, not the Building Block text.
+                    "value_sha256": value_sha256,
+                    "value_length": value_length,
                 }
                 entries.append(record)
             except (pywintypes.com_error, AttributeError, TypeError, ValueError):
