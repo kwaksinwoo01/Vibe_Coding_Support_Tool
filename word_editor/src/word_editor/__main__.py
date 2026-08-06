@@ -58,6 +58,22 @@ def build_service(normal_path: Path | None = None) -> EditorService:
     return editor_service
 
 
+def _load_status(service: EditorService) -> str:
+    snapshot = service.current
+    if snapshot is None:
+        return "초기 로드 정보 없음"
+    source = str(snapshot.metadata.get("load_source") or "unknown")
+    duration = snapshot.metadata.get("load_duration_ms")
+    source_label = {
+        "disk-cache": "디스크 캐시",
+        "word-fast-index": "Word 빠른 인덱스",
+        "word-full-scan": "Word 전체 스캔",
+    }.get(source, source)
+    if duration is None:
+        return f"로드 경로: {source_label}"
+    return f"로드 경로: {source_label} · {duration} ms"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Company Word template, style, and header/footer asset manager"
@@ -80,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         lifecycle_service,
     )
     window.show()
+    window.statusBar().showMessage(_load_status(editor_service), 12000)
     return application.exec()
 
 
