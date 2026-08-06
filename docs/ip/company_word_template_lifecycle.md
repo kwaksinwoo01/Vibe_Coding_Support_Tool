@@ -58,7 +58,9 @@ Each approved version stores:
 - approval note and timestamp;
 - change report.
 
-Building Block and AutoText inventories are used to detect additions, removals, and metadata changes. The original file is retained because headers, Quick Parts, Building Blocks, VBA, custom UI, relationships, and other template content cannot be safely reconstructed from the style snapshot.
+Building Block inventory records the entry name, type, category, description, insertion option, content character count, and SHA-256 of the content string. The actual Building Block text is not copied into the JSON inventory. Its original content remains only inside the preserved template file.
+
+Building Block and AutoText inventories are used to detect additions, removals, metadata changes, and Building Block content changes. The original file is retained because headers, Quick Parts, Building Blocks, VBA, custom UI, relationships, and other template content cannot be safely reconstructed from the style snapshot.
 
 ## Registered template assets
 
@@ -70,6 +72,8 @@ Registration:
 2. Captures styles, Building Blocks, AutoText, file hash, and warnings.
 3. Associates the asset with the currently active profile.
 4. Includes the asset in that profile's distribution package.
+
+A registered asset can be linked to multiple profiles. For example, one approved company header Building Block template can be shared by both the DCM electronic-document profile and the FDM paper-document profile without registering duplicate managed copies.
 
 Update:
 
@@ -83,7 +87,7 @@ A template change report contains:
 
 - full-file SHA-256 difference;
 - style-property changes, including properties of added or removed styles;
-- added, removed, and metadata-changed Building Blocks;
+- added, removed, metadata-changed, or content-changed Building Blocks;
 - added and removed AutoText entries;
 - inventory warnings when Word does not expose a template object.
 
@@ -113,6 +117,8 @@ The manifest records profile identity, classification code, version, Normal.dotm
 
 A package cannot be generated from an active profile while the live `Normal.dotm` contains unapproved changes. The user must first approve the changes or distribute the last approved canonical profile explicitly.
 
+The package generator rejects two assets with the same file name in one profile because one ZIP member or employee installation target would overwrite the other.
+
 The installer:
 
 1. refuses to run while Word is open;
@@ -120,8 +126,9 @@ The installer:
 3. backs up the employee's existing `Normal.dotm`;
 4. installs the selected company `Normal.dotm`;
 5. verifies every registered template asset SHA-256;
-6. installs `header-building-block-template` and `document-building-block-template` assets directly under `%APPDATA%/Microsoft/Word/STARTUP` so Word loads them as global templates at startup;
-7. installs other company templates under `%APPDATA%/Microsoft/Templates/CompanyTemplates`.
+6. backs up an existing employee template before replacing a same-name asset;
+7. installs `header-building-block-template` and `document-building-block-template` assets directly under `%APPDATA%/Microsoft/Word/STARTUP` so Word loads them as global templates at startup;
+8. installs other company templates under `%APPDATA%/Microsoft/Templates/CompanyTemplates`.
 
 ## Operational rule
 
