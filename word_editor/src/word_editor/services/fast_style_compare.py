@@ -10,6 +10,7 @@ from word_editor.infrastructure.openxml_style_index import (
     OpenXmlStyleIndexError,
     OpenXmlStyleIndexReader,
 )
+from word_editor.infrastructure.word_com import WordGatewayError
 from word_editor.infrastructure.word_style_sdk import WordStyleSdkGateway
 
 
@@ -99,5 +100,5 @@ class FastStyleCompareService:
     ) -> MergePlan | None:
         try:
             return self.compare(target_path, incoming_path)
-        except OpenXmlStyleIndexError:
+        except (OpenXmlStyleIndexError, WordGatewayError, KeyError):
             return None
