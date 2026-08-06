@@ -78,7 +78,7 @@ Responsibilities:
 - post-save read-back verification;
 - automatic property rollback when verification fails.
 
-Built-in styles, the default paragraph style, and custom styles referenced by another style cannot be deleted.
+Built-in styles, the default paragraph style, styles referenced by another style, and styles linked from a list-template level cannot be deleted.
 
 ### Word session SDK
 
@@ -106,10 +106,11 @@ Responsibilities:
 
 - persistent index and full-snapshot caches;
 - resolved-path identity;
-- file-size and nanosecond modification-time invalidation;
-- explicit invalidation after edits, style injection, or header/footer application.
+- file-size, nanosecond modification-time, and full-file SHA-256 verification;
+- explicit invalidation after edits, style injection, or header/footer application;
+- load source and duration metadata for the UI status bar.
 
-The cache is never authoritative after the source file changes.
+The SHA check prevents DCM and FDM profile files with the same size and preserved timestamp from sharing a stale cache. The cache is never authoritative after the source file changes.
 
 ### Open XML comparison SDK
 
@@ -191,7 +192,7 @@ Validation does not invent requirements for Word's default header or footer gall
 ## Expected performance behavior
 
 - First run after a file change: Word starts once and reads the fast index.
-- Reopening an unchanged file: disk cache can populate the list without opening the file through Word.
+- Reopening an unchanged file: the SHA-verified disk cache can populate the list without opening the file through Word.
 - Selecting a style: only selected style definitions are read.
 - Applying changes: only selected styles are read, written, and verified.
 - Comparing documents: Open XML identifies candidates before Word COM reads details.
@@ -205,7 +206,7 @@ Actual duration depends on Office startup time, security software, template size
 2. Restart the editor without changing `Normal.dotm` and confirm a cache hit.
 3. Edit one custom style and confirm post-save verification metadata.
 4. Create and duplicate a paragraph style.
-5. Attempt to delete a built-in and a referenced custom style; both must be blocked.
+5. Attempt to delete a built-in, referenced custom, and list-linked style; all must be blocked.
 6. Delete an unreferenced custom style and confirm it is absent after reopening Word.
 7. Compare two documents with one changed style and confirm only the candidate is read.
 8. Register a company header/footer template that has no Word default header/footer.
