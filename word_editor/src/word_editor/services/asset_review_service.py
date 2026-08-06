@@ -5,6 +5,9 @@ from pathlib import Path
 
 from word_editor.domain.diff import changed_properties
 from word_editor.domain.template_lifecycle import TemplateChangeReport, utc_now_iso
+from word_editor.services.header_footer_review import (
+    compare_header_footer_inventories,
+)
 from word_editor.services.template_lifecycle_service import (
     TemplateLifecycleError,
     TemplateLifecycleService,
@@ -34,8 +37,6 @@ def review_registered_asset(
             f"등록 당시 원본 템플릿을 찾지 못했습니다: {source_path}"
         )
 
-    baseline_snapshot = lifecycle.gateway.snapshot_path(managed_path)
-    current_snapshot = lifecycle.gateway.snapshot_path(source_path)
     baseline_inventory = lifecycle.inventory_reader.capture(managed_path)
     current_inventory = lifecycle.inventory_reader.capture(source_path)
     (
@@ -48,6 +49,23 @@ def review_registered_asset(
         baseline_inventory,
         current_inventory,
     )
+    added_headers, removed_headers, changed_headers = (
+        compare_header_footer_inventories(
+            baseline_inventory,
+            current_inventory,
+        )
+    )
+
+    style_changes = {}
+    if baseline_inventory.file_sha256 != current_inventory.file_sha256:
+        # Full style scans are reserved for an explicit changed-asset audit.
+        baseline_snapshot = lifecycle.gateway.snapshot_path(managed_path)
+        current_snapshot = lifecycle.gateway.snapshot_path(source_path)
+        style_changes = changed_properties(
+            baseline_snapshot,
+            current_snapshot,
+        )
+
     warnings = list(baseline_inventory.warnings)
     warnings.extend(current_inventory.warnings)
     return TemplateChangeReport(
@@ -57,15 +75,15 @@ def review_registered_asset(
         created_at=utc_now_iso(),
         baseline_sha256=baseline_inventory.file_sha256,
         current_sha256=current_inventory.file_sha256,
-        style_changes=changed_properties(
-            baseline_snapshot,
-            current_snapshot,
-        ),
+        style_changes=style_changes,
         added_building_blocks=added_blocks,
         removed_building_blocks=removed_blocks,
         changed_building_blocks=changed_blocks,
         added_autotext=added_autotext,
         removed_autotext=removed_autotext,
+        added_header_footers=added_headers,
+        removed_header_footers=removed_headers,
+        changed_header_footers=changed_headers,
         warnings=warnings,
     )
 
