@@ -55,6 +55,8 @@ def test_inventory_round_trip_preserves_building_blocks_and_autotext() -> None:
                 "name": "Header",
                 "type": 1,
                 "category": "Company",
+                "value_sha256": "header-content-hash",
+                "value_length": 41,
             }
         ],
         autotext_entries=["회사명", "문서번호"],
@@ -65,6 +67,11 @@ def test_inventory_round_trip_preserves_building_blocks_and_autotext() -> None:
 
     assert restored.file_sha256 == "abc"
     assert restored.building_blocks[0]["key"] == "Header|1|Company"
+    assert restored.building_blocks[0]["value_sha256"] == (
+        "header-content-hash"
+    )
+    assert restored.building_blocks[0]["value_length"] == 41
+    assert "value" not in restored.building_blocks[0]
     assert restored.autotext_entries == ["회사명", "문서번호"]
     assert restored.template_object_found is True
 
