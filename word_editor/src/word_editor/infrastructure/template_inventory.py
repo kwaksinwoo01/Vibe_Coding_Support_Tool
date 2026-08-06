@@ -10,13 +10,15 @@ from typing import Any
 import pywintypes
 
 from word_editor.domain.template_lifecycle import TemplateAssetInventory
-from word_editor.infrastructure.editable_word_com import EditableWordComGateway
+from word_editor.infrastructure.header_footer_sdk import HeaderFooterSdk
 from word_editor.infrastructure.word_com import WD_DO_NOT_SAVE_CHANGES, WordGatewayError
+from word_editor.infrastructure.word_style_sdk import WordStyleSdkGateway
 
 
 class TemplateInventoryReader:
-    def __init__(self, gateway: EditableWordComGateway) -> None:
+    def __init__(self, gateway: WordStyleSdkGateway) -> None:
         self.gateway = gateway
+        self.header_footer_sdk = HeaderFooterSdk(gateway)
 
     @staticmethod
     def _sha256(path: Path) -> str:
@@ -87,23 +89,23 @@ class TemplateInventoryReader:
                     text_value = str(raw_value)
                     value_length = len(text_value)
                     value_sha256 = self._text_sha256(text_value)
-                record = {
-                    "key": f"{name}|{block_type}|{category_name}",
-                    "name": name,
-                    "type": block_type,
-                    "category": str(category_name),
-                    "description": str(
-                        self._safe_value(entry, "Description", "")
-                    ),
-                    "insert_options": self._safe_value(
-                        entry,
-                        "InsertOptions",
-                    ),
-                    # Preserve only a fingerprint, not the Building Block text.
-                    "value_sha256": value_sha256,
-                    "value_length": value_length,
-                }
-                entries.append(record)
+                entries.append(
+                    {
+                        "key": f"{name}|{block_type}|{category_name}",
+                        "name": name,
+                        "type": block_type,
+                        "category": str(category_name),
+                        "description": str(
+                            self._safe_value(entry, "Description", "")
+                        ),
+                        "insert_options": self._safe_value(
+                            entry,
+                            "InsertOptions",
+                        ),
+                        "value_sha256": value_sha256,
+                        "value_length": value_length,
+                    }
+                )
             except (pywintypes.com_error, AttributeError, TypeError, ValueError):
                 continue
         entries.sort(key=lambda item: str(item.get("key", "")).casefold())
@@ -118,8 +120,7 @@ class TemplateInventoryReader:
             return names
         for index in range(1, count + 1):
             try:
-                entry = collection.Item(index)
-                names.append(str(entry.Name))
+                names.append(str(collection.Item(index).Name))
             except (pywintypes.com_error, AttributeError, TypeError, ValueError):
                 continue
         return sorted(set(names), key=str.casefold)
@@ -153,10 +154,13 @@ class TemplateInventoryReader:
 
     def capture(self, path: Path) -> TemplateAssetInventory:
         target = self.gateway._validate_target(path)
-        snapshot = self.gateway.snapshot_path(target)
+        # The inventory requires a stable style identity hash, not every style
+        # property. The fast index avoids a second full two-minute scan.
+        snapshot = self.gateway.snapshot_path_index(target)
         warnings: list[str] = []
         building_blocks: list[dict[str, Any]] = []
         autotext_entries: list[str] = []
+        header_footer_entries: list[dict[str, Any]] = []
         template_object_found = False
 
         with self.gateway._session() as session:
@@ -166,9 +170,10 @@ class TemplateInventoryReader:
                 read_only=True,
             )
             try:
+                header_footer_entries = (
+                    self.header_footer_sdk.capture_document_object(document)
+                )
                 try:
-                    # Word loads Building Blocks lazily; force all currently
-                    # available templates to populate their galleries now.
                     session.application.Templates.LoadBuildingBlocks()
                 except (pywintypes.com_error, AttributeError) as exc:
                     warnings.append(
@@ -183,7 +188,7 @@ class TemplateInventoryReader:
                     warnings.append(
                         "Word Templates 컬렉션에서 대상 템플릿 객체를 찾지 못해 "
                         "Building Block/AutoText 목록을 읽지 못했습니다. "
-                        "원본 파일 전체는 계속 보존됩니다."
+                        "원본 파일 전체와 머리글·바닥글은 계속 보존됩니다."
                     )
                 else:
                     template_object_found = True
@@ -217,6 +222,7 @@ class TemplateInventoryReader:
             ),
             building_blocks=building_blocks,
             autotext_entries=autotext_entries,
+            header_footer_entries=header_footer_entries,
             template_object_found=template_object_found,
             warnings=warnings,
         )
