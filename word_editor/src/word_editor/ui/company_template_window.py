@@ -12,6 +12,9 @@ from PySide6.QtWidgets import (
     QPushButton,
 )
 
+from word_editor.services.asset_assignment_service import (
+    attach_asset_to_profile,
+)
 from word_editor.services.asset_review_service import (
     approve_registered_asset_update,
     review_registered_asset,
@@ -42,6 +45,11 @@ class CompanyTemplateWindow(ApplicationMainWindow):
         asset_bar.addWidget(QLabel("등록 템플릿 자산:"))
         self.asset_summary_label = QLabel("")
         asset_bar.addWidget(self.asset_summary_label, 1)
+        self.attach_asset_button = QPushButton("자산-프로필 연결")
+        self.attach_asset_button.clicked.connect(
+            self.attach_registered_asset_to_profile
+        )
+        asset_bar.addWidget(self.attach_asset_button)
         self.review_asset_button = QPushButton("등록 자산 변경 검증·저장")
         self.review_asset_button.clicked.connect(
             self.review_and_update_registered_asset
@@ -52,17 +60,18 @@ class CompanyTemplateWindow(ApplicationMainWindow):
 
     def _refresh_asset_summary(self) -> None:
         assets = self.lifecycle.assets()
+        enabled = bool(assets)
+        self.attach_asset_button.setEnabled(enabled)
+        self.review_asset_button.setEnabled(enabled)
         if not assets:
             self.asset_summary_label.setText(
                 "등록된 템플릿 없음 — 머리글 문서블록 템플릿을 먼저 등록하십시오."
             )
-            self.review_asset_button.setEnabled(False)
             return
         self.asset_summary_label.setText(
             f"{len(assets)}개 보존됨 · 활성 프로필 배포 패키지에 연결된 자산 "
             f"{len(self.lifecycle.active_profile().asset_ids)}개"
         )
-        self.review_asset_button.setEnabled(True)
 
     def register_template_asset(self) -> None:
         super().register_template_asset()
@@ -76,6 +85,66 @@ class CompanyTemplateWindow(ApplicationMainWindow):
         super().activate_selected_profile()
         self._reload_profile_combo()
         self._refresh_asset_summary()
+
+    def attach_registered_asset_to_profile(self) -> None:
+        assets = self.lifecycle.assets()
+        profiles = self.lifecycle.profiles()
+        if not assets or not profiles:
+            return
+        asset_labels = [
+            f"{asset.display_name} · {asset.role} · {asset.asset_id}"
+            for asset in assets
+        ]
+        selected_asset, accepted = QInputDialog.getItem(
+            self,
+            "등록 템플릿 선택",
+            "연결할 템플릿 자산:",
+            asset_labels,
+            0,
+            False,
+        )
+        if not accepted:
+            return
+        asset = assets[asset_labels.index(selected_asset)]
+
+        profile_labels = [
+            f"{profile.classification_code} · {profile.display_name} · "
+            f"{profile.profile_id}"
+            for profile in profiles
+        ]
+        selected_profile, accepted = QInputDialog.getItem(
+            self,
+            "대상 프로필 선택",
+            "템플릿 자산을 포함할 프로필:",
+            profile_labels,
+            0,
+            False,
+        )
+        if not accepted:
+            return
+        profile = profiles[profile_labels.index(selected_profile)]
+        try:
+            attached = attach_asset_to_profile(
+                self.lifecycle,
+                asset.asset_id,
+                profile.profile_id,
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "자산 연결 실패", str(exc))
+            return
+        self._refresh_asset_summary()
+        if attached:
+            QMessageBox.information(
+                self,
+                "자산 연결 완료",
+                f"{asset.display_name}\n→ {profile.display_name}",
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "자산 연결",
+                "이미 해당 프로필에 연결된 템플릿 자산입니다.",
+            )
 
     def review_and_update_registered_asset(self) -> None:
         assets = self.lifecycle.assets()
@@ -209,6 +278,8 @@ class CompanyTemplateWindow(ApplicationMainWindow):
 
     def _on_external_change(self) -> None:
         super()._on_external_change()
+        if not hasattr(self, "active_profile_label"):
+            return
         marker = " · 외부 변경 감지: 검증 필요"
         if marker not in self.active_profile_label.text():
             self.active_profile_label.setText(
