@@ -120,7 +120,7 @@ The installer:
 3. backs up the employee's existing `Normal.dotm`;
 4. installs the selected company `Normal.dotm`;
 5. verifies every registered template asset SHA-256;
-6. installs `header-building-block-template` and `document-building-block-template` assets under `%APPDATA%/Microsoft/Word/STARTUP/CompanyTemplates` so Word loads them as global templates at startup;
+6. installs `header-building-block-template` and `document-building-block-template` assets directly under `%APPDATA%/Microsoft/Word/STARTUP` so Word loads them as global templates at startup;
 7. installs other company templates under `%APPDATA%/Microsoft/Templates/CompanyTemplates`.
 
 ## Operational rule
