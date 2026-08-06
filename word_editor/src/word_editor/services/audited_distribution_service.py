@@ -37,6 +37,33 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
     )
 
 
+def _validate_unique_asset_file_names(
+    lifecycle: TemplateLifecycleService,
+    profile_id: str,
+) -> None:
+    profile = lifecycle.registry.profiles[profile_id]
+    owners: dict[str, str] = {}
+    conflicts: list[str] = []
+    for asset_id in profile.asset_ids:
+        asset = lifecycle.registry.assets.get(asset_id)
+        if asset is None:
+            continue
+        file_name = Path(asset.managed_path).name
+        key = file_name.casefold()
+        previous = owners.get(key)
+        if previous is not None:
+            conflicts.append(f"{file_name}: {previous}, {asset.asset_id}")
+        else:
+            owners[key] = asset.asset_id
+    if conflicts:
+        raise TemplateLifecycleError(
+            "한 프로필에 같은 파일명의 등록 템플릿이 두 개 이상 있습니다. "
+            "배포 ZIP에서 덮어쓰기가 발생할 수 있으므로 원본 파일명을 "
+            "서로 다르게 변경한 뒤 다시 등록하십시오.\n- "
+            + "\n- ".join(conflicts)
+        )
+
+
 def _installer_script(expected_sha256: str) -> str:
     return f'''[CmdletBinding()]
 param(
@@ -60,10 +87,10 @@ $actualHash = (Get-FileHash -LiteralPath $sourceNormal -Algorithm SHA256).Hash.T
 if ($actualHash -ne "{expected_sha256.lower()}") {{
     throw "패키지 Normal.dotm SHA-256이 manifest와 다릅니다."
 }}
+$stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $targetDirectory = Split-Path -Parent $NormalPath
 New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
 if (Test-Path -LiteralPath $NormalPath) {{
-    $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
     Copy-Item -LiteralPath $NormalPath -Destination "$NormalPath.before-company-$stamp.bak" -Force
 }}
 Copy-Item -LiteralPath $sourceNormal -Destination $NormalPath -Force
@@ -85,7 +112,11 @@ foreach ($asset in @($manifest.assets)) {{
         $destinationRoot = $normalTemplateAssetRoot
     }}
     New-Item -ItemType Directory -Path $destinationRoot -Force | Out-Null
-    Copy-Item -LiteralPath $source -Destination (Join-Path $destinationRoot $asset.file_name) -Force
+    $destination = Join-Path $destinationRoot $asset.file_name
+    if (Test-Path -LiteralPath $destination) {{
+        Copy-Item -LiteralPath $destination -Destination "$destination.before-company-$stamp.bak" -Force
+    }}
+    Copy-Item -LiteralPath $source -Destination $destination -Force
 }}
 Write-Host "회사 Word 템플릿 설치 완료: $NormalPath"
 Write-Host "머리글/문서블록 템플릿은 Word STARTUP 전역 템플릿 폴더에 설치되었습니다."
@@ -99,6 +130,7 @@ def create_audited_distribution_package(
     version_label: str,
     note: str = "",
 ) -> Path:
+    _validate_unique_asset_file_names(lifecycle, profile_id)
     if profile_id == lifecycle.registry.active_profile_id:
         report = lifecycle.review_current_changes(profile_id)
         if report.has_changes:
@@ -136,6 +168,7 @@ def create_audited_distribution_package(
             "other_company_templates": (
                 "%APPDATA%/Microsoft/Templates/CompanyTemplates"
             ),
+            "overwrite_policy": "backup-then-replace",
         }
         _write_json(manifest_path, manifest)
 
