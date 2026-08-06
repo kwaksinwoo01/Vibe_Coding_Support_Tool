@@ -154,9 +154,6 @@ class TemplateInventoryReader:
 
     def capture(self, path: Path) -> TemplateAssetInventory:
         target = self.gateway._validate_target(path)
-        # The inventory requires a stable style identity hash, not every style
-        # property. The fast index avoids a second full two-minute scan.
-        snapshot = self.gateway.snapshot_path_index(target)
         warnings: list[str] = []
         building_blocks: list[dict[str, Any]] = []
         autotext_entries: list[str] = []
@@ -170,6 +167,11 @@ class TemplateInventoryReader:
                 read_only=True,
             )
             try:
+                snapshot = self.gateway._snapshot_style_index_object(
+                    session.application,
+                    document,
+                    target,
+                )
                 header_footer_entries = (
                     self.header_footer_sdk.capture_document_object(document)
                 )
