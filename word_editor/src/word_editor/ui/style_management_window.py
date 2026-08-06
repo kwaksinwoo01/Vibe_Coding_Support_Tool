@@ -4,9 +4,9 @@ from typing import Any
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QInputDialog,
     QListWidget,
-    QListWidgetItem,
     QMenu,
     QMessageBox,
 )
@@ -22,7 +22,7 @@ from word_editor.ui.company_template_window import CompanyTemplateWindow
 
 
 class StyleManagementWindow(CompanyTemplateWindow):
-    """Company template window with lazy style details and context actions."""
+    """Company template window with lazy details and safe style actions."""
 
     def __init__(
         self,
@@ -50,6 +50,45 @@ class StyleManagementWindow(CompanyTemplateWindow):
                 QMessageBox.critical(self, "스타일 상세 조회 실패", str(exc))
                 return
         super()._load_selected_styles()
+
+    def apply_selected_styles(self) -> None:
+        """Apply edits in the UI thread that owns the reusable Word session."""
+
+        self._apply_timer.stop()
+        selected_names = self._selected_style_names()
+        if not selected_names:
+            return
+        updates = self._collect_common_updates()
+        if not updates:
+            return
+        updates_by_style = {
+            style_name: dict(updates) for style_name in selected_names
+        }
+        self.service.stop_watching()
+        self.centralWidget().setEnabled(False)
+        self.statusBar().showMessage(
+            "선택한 스타일만 Word에 적용하고 검증하는 중입니다."
+        )
+        QApplication.processEvents()
+        try:
+            snapshot = self.service.apply_style_updates_many(updates_by_style)
+        except Exception as exc:
+            QMessageBox.critical(self, "적용 실패", str(exc))
+            self.statusBar().showMessage(
+                "적용하지 못했습니다. 입력값과 Word의 저장 상태를 확인하십시오.",
+                8000,
+            )
+            return
+        finally:
+            self.centralWidget().setEnabled(True)
+            self.service.start_watching(self._event_bridge.target_changed.emit)
+        self._populate_styles(snapshot.styles, selected_names)
+        self._show_validation()
+        self.statusBar().showMessage(
+            f"스타일 {len(selected_names)}개에 공통 속성 "
+            f"{len(updates)}개 적용 완료",
+            5000,
+        )
 
     def _show_style_context_menu(
         self,
@@ -220,8 +259,5 @@ class StyleManagementWindow(CompanyTemplateWindow):
         self.statusBar().showMessage("선택 스타일 상세 조회 완료", 3000)
 
     def closeEvent(self, event: Any) -> None:
-        if getattr(self, "_apply_thread", None) is not None:
-            super().closeEvent(event)
-            return
         self.service.close()
         super().closeEvent(event)
