@@ -93,6 +93,7 @@ class TemplateAssetInventory:
     styles_sha256: str
     building_blocks: list[dict[str, Any]] = field(default_factory=list)
     autotext_entries: list[str] = field(default_factory=list)
+    header_footer_entries: list[dict[str, Any]] = field(default_factory=list)
     template_object_found: bool = False
     warnings: list[str] = field(default_factory=list)
 
@@ -105,6 +106,7 @@ class TemplateAssetInventory:
             "styles_sha256": self.styles_sha256,
             "building_blocks": self.building_blocks,
             "autotext_entries": self.autotext_entries,
+            "header_footer_entries": self.header_footer_entries,
             "template_object_found": self.template_object_found,
             "warnings": self.warnings,
         }
@@ -121,6 +123,9 @@ class TemplateAssetInventory:
             autotext_entries=[
                 str(item) for item in value.get("autotext_entries", [])
             ],
+            header_footer_entries=list(
+                value.get("header_footer_entries", [])
+            ),
             template_object_found=bool(value.get("template_object_found", False)),
             warnings=[str(item) for item in value.get("warnings", [])],
         )
@@ -142,6 +147,9 @@ class TemplateChangeReport:
     changed_building_blocks: list[str] = field(default_factory=list)
     added_autotext: list[str] = field(default_factory=list)
     removed_autotext: list[str] = field(default_factory=list)
+    added_header_footers: list[str] = field(default_factory=list)
+    removed_header_footers: list[str] = field(default_factory=list)
+    changed_header_footers: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -154,6 +162,9 @@ class TemplateChangeReport:
             or self.changed_building_blocks
             or self.added_autotext
             or self.removed_autotext
+            or self.added_header_footers
+            or self.removed_header_footers
+            or self.changed_header_footers
         )
 
     def summary_lines(self, max_style_items: int = 40) -> list[str]:
@@ -169,6 +180,10 @@ class TemplateChangeReport:
             f"{len(self.changed_building_blocks)}",
             f"AutoText 추가/삭제: "
             f"{len(self.added_autotext)}/{len(self.removed_autotext)}",
+            f"머리글·바닥글 추가/삭제/변경: "
+            f"{len(self.added_header_footers)}/"
+            f"{len(self.removed_header_footers)}/"
+            f"{len(self.changed_header_footers)}",
         ]
         for style_name, changes in list(self.style_changes.items())[
             :max_style_items
@@ -184,6 +199,9 @@ class TemplateChangeReport:
             ("Building Block 변경", self.changed_building_blocks),
             ("AutoText 추가", self.added_autotext),
             ("AutoText 삭제", self.removed_autotext),
+            ("머리글·바닥글 추가", self.added_header_footers),
+            ("머리글·바닥글 삭제", self.removed_header_footers),
+            ("머리글·바닥글 변경", self.changed_header_footers),
         ):
             for value in values[:20]:
                 lines.append(f"- {label}: {value}")
@@ -211,6 +229,9 @@ class TemplateChangeReport:
             "changed_building_blocks": self.changed_building_blocks,
             "added_autotext": self.added_autotext,
             "removed_autotext": self.removed_autotext,
+            "added_header_footers": self.added_header_footers,
+            "removed_header_footers": self.removed_header_footers,
+            "changed_header_footers": self.changed_header_footers,
             "warnings": self.warnings,
         }
 
@@ -223,7 +244,7 @@ class TemplateRegistry:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "active_profile_id": self.active_profile_id,
             "profiles": {
                 key: value.to_dict()
