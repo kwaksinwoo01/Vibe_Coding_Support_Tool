@@ -75,7 +75,7 @@ Update:
 
 1. Compares the registered source path with the managed copy.
 2. Displays a change report.
-3. Saves a new managed version only after explicit user approval.
+3. Saves the full report and a new managed version only after explicit user approval.
 
 ## Change validation
 
@@ -98,19 +98,30 @@ CompanyWordTemplate/
 ├─ Normal.dotm
 ├─ manifest.json
 ├─ Install-CompanyWordTemplate.ps1
-└─ CompanyTemplates/
-   └─ registered .dotm/.dotx assets
+├─ CompanyTemplates/
+│  └─ registered .dotm/.dotx assets
+└─ audit/
+   ├─ profile.json
+   ├─ normal-inventory.json
+   ├─ normal-styles.json
+   └─ assets/<asset-id>/
+      ├─ asset.json
+      └─ inventory.json
 ```
 
-The manifest records profile identity, classification code, version, Normal.dotm SHA-256, style hash, Building Block count, AutoText count, and asset hashes.
+The manifest records profile identity, classification code, version, Normal.dotm SHA-256, style hash, Building Block count, AutoText count, asset hashes, and each asset's installation destination.
+
+A package cannot be generated from an active profile while the live `Normal.dotm` contains unapproved changes. The user must first approve the changes or distribute the last approved canonical profile explicitly.
 
 The installer:
 
 1. refuses to run while Word is open;
-2. verifies the packaged Normal.dotm SHA-256;
-3. backs up the employee's existing Normal.dotm;
-4. installs the selected company Normal.dotm;
-5. copies registered company templates into a `CompanyTemplates` subdirectory.
+2. verifies the packaged `Normal.dotm` SHA-256;
+3. backs up the employee's existing `Normal.dotm`;
+4. installs the selected company `Normal.dotm`;
+5. verifies every registered template asset SHA-256;
+6. installs `header-building-block-template` and `document-building-block-template` assets under `%APPDATA%/Microsoft/Word/STARTUP/CompanyTemplates` so Word loads them as global templates at startup;
+7. installs other company templates under `%APPDATA%/Microsoft/Templates/CompanyTemplates`.
 
 ## Operational rule
 
