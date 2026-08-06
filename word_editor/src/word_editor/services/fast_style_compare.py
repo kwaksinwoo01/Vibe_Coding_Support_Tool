@@ -6,11 +6,7 @@ from pathlib import Path
 
 from word_editor.domain.diff import three_way_merge
 from word_editor.domain.models import MergePlan, StyleDefinition, TemplateSnapshot
-from word_editor.infrastructure.openxml_style_index import (
-    OpenXmlStyleIndexError,
-    OpenXmlStyleIndexReader,
-)
-from word_editor.infrastructure.word_com import WordGatewayError
+from word_editor.infrastructure.openxml_style_index import OpenXmlStyleIndexReader
 from word_editor.infrastructure.word_style_sdk import WordStyleSdkGateway
 
 
@@ -100,5 +96,8 @@ class FastStyleCompareService:
     ) -> MergePlan | None:
         try:
             return self.compare(target_path, incoming_path)
-        except (OpenXmlStyleIndexError, WordGatewayError, KeyError):
+        except Exception:
+            # This layer is an optimization. Unsupported packages, localized
+            # style identity edge cases, or COM lookup failures must fall back
+            # to the existing full comparison rather than abort the operation.
             return None
