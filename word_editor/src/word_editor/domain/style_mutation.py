@@ -52,6 +52,26 @@ def validate_new_style_name(snapshot: TemplateSnapshot, name: str) -> str:
     return normalized
 
 
+def _list_template_references(
+    snapshot: TemplateSnapshot,
+    style_name: str,
+) -> list[str]:
+    references: list[str] = []
+    for template_key, template in snapshot.list_templates.items():
+        levels = template.get("levels", {})
+        if not isinstance(levels, dict):
+            continue
+        for level_key, level in levels.items():
+            if not isinstance(level, dict):
+                continue
+            if level.get("linked_style") == style_name:
+                template_name = str(template.get("name") or template_key)
+                references.append(
+                    f"목록 템플릿 {template_name}.level[{level_key}].linked_style"
+                )
+    return references
+
+
 def delete_style_blockers(
     snapshot: TemplateSnapshot,
     style_names: tuple[str, ...],
@@ -80,25 +100,19 @@ def delete_style_blockers(
                 referenced_by.append(f"{candidate.name}.style.base_style")
             if candidate.properties.get("style.next_style") == style_name:
                 referenced_by.append(f"{candidate.name}.style.next_style")
-            if candidate.list_binding.get("linked_style") == style_name:
-                referenced_by.append(f"{candidate.name}.list_binding.linked_style")
+        referenced_by.extend(_list_template_references(snapshot, style_name))
         if referenced_by:
             blockers.append(
                 DeleteStyleBlocker(
                     style_name,
-                    "다른 스타일이 참조하고 있어 먼저 참조를 변경해야 합니다.",
-                    tuple(sorted(referenced_by, key=str.casefold)),
+                    "다른 스타일 또는 목록 템플릿이 참조하고 있어 먼저 참조를 변경해야 합니다.",
+                    tuple(sorted(set(referenced_by), key=str.casefold)),
                 )
             )
     return blockers
 
 
 def cloneable_properties(style: StyleDefinition) -> dict[str, object]:
-    """Return only property values already captured by the editor.
-
-    Structural identity, built-in identity, and list bindings are deliberately
-    excluded. The created style gets a new Word identity and then receives the
-    safe editable property values through the normal patch pipeline.
-    """
+    """Return only property values already captured by the editor."""
 
     return dict(style.properties)
