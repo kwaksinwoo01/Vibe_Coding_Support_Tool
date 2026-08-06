@@ -13,7 +13,7 @@ from word_editor.services.editor_service import EditorService
 from word_editor.services.template_lifecycle_service import (
     TemplateLifecycleService,
 )
-from word_editor.ui.company_template_window import CompanyTemplateWindow
+from word_editor.ui.style_management_window import StyleManagementWindow
 
 
 def build_services(
@@ -57,7 +57,7 @@ def build_service(normal_path: Path | None = None) -> EditorService:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Live editor and lifecycle manager for Microsoft Word templates"
+        description="Company Word template, style, and header/footer asset manager"
     )
     parser.add_argument(
         "--normal-path",
@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     application = QApplication(sys.argv[:1])
     application.setApplicationName("Company Word Template Manager")
     editor_service, lifecycle_service = build_services(args.normal_path)
-    window = CompanyTemplateWindow(editor_service, lifecycle_service)
+    window = StyleManagementWindow(editor_service, lifecycle_service)
     window.show()
     return application.exec()
 
