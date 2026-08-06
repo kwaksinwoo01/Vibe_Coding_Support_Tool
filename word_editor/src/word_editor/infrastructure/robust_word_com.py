@@ -12,7 +12,7 @@ import pythoncom
 import pywintypes
 import win32com.client
 
-from word_editor.infrastructure.editable_word_com import EditableWordComGateway
+from word_editor.infrastructure.word_style_sdk import WordStyleSdkGateway
 from word_editor.infrastructure.word_com import (
     WD_ALERTS_NONE,
     WD_DO_NOT_SAVE_CHANGES,
@@ -152,14 +152,8 @@ def format_word_com_diagnostics(attempts: list[tuple[str, BaseException]]) -> st
     )
 
 
-class RobustWordComGateway(EditableWordComGateway):
-    """Editable Word gateway with a reusable UI-thread COM application.
-
-    Word startup is one of the largest costs in the editor. The application
-    created on the gateway's owner thread is kept alive until ``close()``. COM
-    objects are never shared with worker threads; a worker still receives a
-    short-lived application in its own apartment.
-    """
+class RobustWordComGateway(WordStyleSdkGateway):
+    """Word style SDK with architecture diagnostics and UI-thread reuse."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -271,8 +265,6 @@ class RobustWordComGateway(EditableWordComGateway):
             pythoncom.CoUninitialize()
 
     def close(self) -> None:
-        """Release the UI-thread Word application owned by this program."""
-
         if threading.get_ident() != self._owner_thread_id:
             return
         application = self._persistent_application
