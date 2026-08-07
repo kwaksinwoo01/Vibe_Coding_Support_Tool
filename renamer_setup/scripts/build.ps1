@@ -255,8 +255,9 @@ if (-not $SkipTests) {
     }
 }
 
-$Installer = Join-Path $ProjectRoot 'dist\ReNamer_Setup_7.4.1.exe'
-$PreviousInstaller = Join-Path $ProjectRoot 'dist\ReNamer_Setup_7.4.exe'
+$Installer = Join-Path $ProjectRoot 'dist\ReNamer_Setup_7.4.2.exe'
+$PreviousInstaller = Join-Path $ProjectRoot 'dist\ReNamer_Setup_7.4.1.exe'
+$PreviousMinorInstaller = Join-Path $ProjectRoot 'dist\ReNamer_Setup_7.4.exe'
 $OlderInstaller = Join-Path $ProjectRoot 'dist\ReNamer_Setup_7.3.exe'
 $LegacyInstaller = Join-Path $ProjectRoot 'dist\ReNamer_Setup.exe'
 
@@ -265,6 +266,7 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
     (Join-Path $ProjectRoot 'dist\classifier'), `
     $Installer, `
     $PreviousInstaller, `
+    $PreviousMinorInstaller, `
     $OlderInstaller, `
     $LegacyInstaller
 

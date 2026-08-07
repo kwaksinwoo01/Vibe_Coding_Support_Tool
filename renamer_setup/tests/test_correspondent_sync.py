@@ -37,7 +37,7 @@ def test_legacy_upgrade_unions_new_defaults_with_local_aliases(
 
     result = sync_correspondent_defaults(
         defaults,
-        release_version="7.4.2",
+        release_version="7.4.1",
     )
 
     assert result.changed is True
@@ -55,7 +55,7 @@ def test_legacy_upgrade_unions_new_defaults_with_local_aliases(
     config = runtime / "config"
     assert (config / APPLIED_DEFAULTS_FILENAME).is_file()
     state = json.loads((config / STATE_FILENAME).read_text(encoding="utf-8"))
-    assert state["release_version"] == "7.4.2"
+    assert state["release_version"] == "7.4.1"
     assert state["defaults_sha256"] == result.defaults_sha256
 
 
@@ -73,7 +73,7 @@ def test_legacy_upgrade_adds_defaults_missing_from_local_file(
         "에이티지코리아\n",
     )
 
-    result = sync_correspondent_defaults(defaults, release_version="7.4.2")
+    result = sync_correspondent_defaults(defaults, release_version="7.4.1")
 
     assert result.changed is True
     assert local.read_text(encoding="utf-8-sig") == (
@@ -99,7 +99,7 @@ def test_followup_patch_removes_managed_alias_but_keeps_local_aliases(
         "써모피서사이언티픽 | 모피셔사이언티픽 | thermofisher.com "
         "=> ThermoFisher\n",
     )
-    sync_correspondent_defaults(first_defaults, release_version="7.4.2")
+    sync_correspondent_defaults(first_defaults, release_version="7.4.1")
 
     second_defaults = _write(
         tmp_path / "defaults-v2.txt",
@@ -127,7 +127,7 @@ def test_user_alias_deletion_is_not_reintroduced_by_later_defaults(
         tmp_path / "defaults-v1.txt",
         "공급사A | 공급사B => 공급사\n",
     )
-    sync_correspondent_defaults(first_defaults, release_version="7.4.2")
+    sync_correspondent_defaults(first_defaults, release_version="7.4.1")
 
     local = _write(
         correspondent_path(),
@@ -154,7 +154,7 @@ def test_patch_updates_unmodified_display_and_preserves_deleted_rule(
         tmp_path / "defaults-v1.txt",
         "공급사A => 이전표시\n삭제대상\n",
     )
-    sync_correspondent_defaults(first_defaults, release_version="7.4.2")
+    sync_correspondent_defaults(first_defaults, release_version="7.4.1")
 
     local = _write(correspondent_path(), "공급사A => 이전표시\n")
     second_defaults = _write(
@@ -176,7 +176,7 @@ def test_tampered_previous_snapshot_falls_back_to_non_destructive_union(
         tmp_path / "defaults-v1.txt",
         "공급사A | 공급사B => 공급사\n",
     )
-    sync_correspondent_defaults(first_defaults, release_version="7.4.2")
+    sync_correspondent_defaults(first_defaults, release_version="7.4.1")
 
     local = _write(
         correspondent_path(),
