@@ -7,8 +7,8 @@ Unicode true
 !include "FileFunc.nsh"
 
 !define PRODUCT_NAME "ReNamer Document Classifier"
-!define PRODUCT_VERSION "7.4.1"
-!define PRODUCT_FILE_VERSION "7.4.1"
+!define PRODUCT_VERSION "7.4.2"
+!define PRODUCT_FILE_VERSION "7.4.2"
 !define PRODUCT_PUBLISHER "KWAKSINWOO"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\ReNamerDocumentClassifier.exe"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReNamerDocumentClassifier"
@@ -50,7 +50,7 @@ Page custom UserSettingsPageCreate UserSettingsPageLeave
 
 Function .onInit
   StrCpy $DefaultName ""
-  StrCpy $KnownNames "곽신우, 김민규, 이슬기, 정우형, 박승주"
+  StrCpy $KnownNames "곽신우, 김민규, 이슬기, 정우형, 박승주, 김예빈"
 FunctionEnd
 
 Function UserSettingsPageCreate
