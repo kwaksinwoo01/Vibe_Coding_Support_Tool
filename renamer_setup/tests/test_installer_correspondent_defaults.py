@@ -53,7 +53,7 @@ def test_installer_output_uses_the_release_name() -> None:
         encoding="utf-8-sig"
     )
 
-    assert '!define PRODUCT_FILE_VERSION "7.4.1"' in installer
+    assert '!define PRODUCT_FILE_VERSION "7.4.2"' in installer
     assert 'OutFile "..\\dist\\ReNamer_Setup_${PRODUCT_FILE_VERSION}.exe"' in installer
     assert "dist\\ReNamer_Setup_7.4.1.exe" in build_script
     assert "$PreviousInstaller" in build_script

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "renamer-document-classifier"
-version = "7.4.1"
+version = "7.4.2"
 description = "Document classifier engine for ReNamer PDF and spreadsheet workflows"
 readme = "README.md"
 requires-python = "==3.14.6"
