@@ -338,7 +338,7 @@ class DocumentMerger:
         changelog_entry = f"\n### Version {version} ({timestamp})\n- {change_description}\n"
         
         # Find changelog section
-        changelog_pattern = r'(## Changelog|## 📝 Changelog|## Change Log)'
+        changelog_pattern = r'(## Changelog|## Change Log)'
         if re.search(changelog_pattern, content):
             # Insert after changelog header
             content = re.sub(
@@ -348,7 +348,7 @@ class DocumentMerger:
             )
         else:
             # Add changelog section at end
-            content += f"\n\n## 📝 Changelog{changelog_entry}"
+            content += f"\n\n## Changelog{changelog_entry}"
         
         return content
     
@@ -457,9 +457,9 @@ class DocumentMerger:
                 section_body = '\n'.join(body_lines).strip()
                 
                 new_section = f"\n\n## {decision.source_section.title}\n\n{section_body}\n"
-                if "## Changelog" in target_content or "## 📝 Changelog" in target_content:
+                if "## Changelog" in target_content:
                     target_content = re.sub(
-                        r'(## (?:📝 )?Changelog)',
+                        r'(## Changelog)',
                         f'{new_section}\\1',
                         target_content
                     )

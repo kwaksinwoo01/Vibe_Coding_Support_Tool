@@ -15,10 +15,9 @@ description: {{PROJECT_DESCRIPTION}}
 
 ---
 
-## 🔧 system constant
+## system constant
 
 {Main_Planning_document} = {{path_to_main_planning_document}}
-{Domain_Service_Base_URL} = https://ersteqwep-1069338123299.europe-west1.run.app
 {Domain_Service_Auth_Header} = X-Workflow-Token
 {Domain_Service_Auth_Token} = WORKFLOW_SHARED_SECRET
 
@@ -178,13 +177,13 @@ Tier E (Document)    → next_node=None → STOP (workflow complete)
 
 ---
 
-## 🔧 Required Setup
+## Required Setup
 
 {{REQUIRED_SETUP}}
 
 ---
 
-## 📚 Guidelines Reference
+## Guidelines Reference
 
 {{GUIDELINES_REFERENCE}}
 
@@ -202,13 +201,13 @@ Tier E (Document)    → next_node=None → STOP (workflow complete)
 
 ---
 
-## 📚 Key Documentation
+## Key Documentation
 
 {{KEY_DOCUMENTATION}}
 
 ---
 
-## 📊 Current Status
+## Current Status
 
 {{CURRENT_STATUS}}
 

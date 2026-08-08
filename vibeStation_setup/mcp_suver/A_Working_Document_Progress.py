@@ -29,6 +29,20 @@ from dataclasses import dataclass
 import re
 from datetime import datetime
 
+# Setup UTF-8 encoding globally to prevent cp949 errors
+if sys.stdout:
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if sys.stderr:
+    try:
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 

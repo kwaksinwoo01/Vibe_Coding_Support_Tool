@@ -182,7 +182,7 @@ class WPDDocument:
     def is_complete(self) -> bool:
         """Check if document is marked as complete."""
         if isinstance(self.status, str):
-            return "✅" in self.status or "COMPLETE" in self.status.upper()
+            return "COMPLETE" in self.status.upper()
         return False
 
 

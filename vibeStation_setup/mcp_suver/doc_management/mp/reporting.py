@@ -60,24 +60,17 @@ class Formatters:
             
             for issue in issues:
                 line_num = issue.line_number if issue.line_number else '-'
-                severity_icon = {
-                    'error': '❌',
-                    'warning': '⚠️',
-                    'info': 'ℹ️',
-                }.get(issue.severity, '•')
-                
+                severity_text = {
+                    'error': '[ERROR]',
+                    'warning': '[WARN]',
+                    'info': '[INFO]',
+                }.get(issue.severity, '[*]')
+
                 message = issue.message[:60] + '...' if len(issue.message) > 60 else issue.message
-                
+
                 lines.append(
                     f"| {issue.file_path} | {line_num} | "
-                    f"{severity_icon} {issue.severity} | {message} |"
-                )
-            
-            return "\n".join(lines)
-        
-        @staticmethod
-        def section_list(sections: List[Dict[str, Any]]) -> str:
-            """Format sections as markdown list"""
+                    f"{severity_text} {issue.severity} | {message} |"
             if not sections:
                 return "*No sections found*"
             
@@ -103,7 +96,7 @@ class Formatters:
                 lines.append(f"**Related Project**: {metadata.related_project}")
             
             if metadata.is_oversized():
-                lines.append("\n⚠️ **Warning**: File exceeds 500 line limit")
+                lines.append("\n[WARNING]: File exceeds 500 line limit")
             
             return "\n".join(lines)
         
@@ -117,8 +110,8 @@ class Formatters:
             lines = []
             
             # Header
-            icon = "✅" if passed else "❌"
-            lines.append(f"## {icon} MP File Validation Report")
+            result_text = "PASS" if passed else "FAIL"
+            lines.append(f"## [{result_text}] MP File Validation Report")
             lines.append("")
             
             # Summary

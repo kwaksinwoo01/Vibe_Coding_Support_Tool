@@ -30,6 +30,9 @@ class TaskContext:
         config: Additional configuration parameters
         previous_state: Optional state from previous tier execution
         session_id: Unique session identifier
+        github_repo_url: Optional external GitHub repository URL (e.g., https://github.com/user/repo.git)
+        github_branch: Optional branch name for external repository
+        github_token: Optional GitHub token for private repositories
     """
     user_input: str = ""
     current_tier: str = ""
@@ -39,6 +42,9 @@ class TaskContext:
     config: Dict[str, Any] = field(default_factory=dict)
     previous_state: Optional[AgentState] = None
     session_id: str = ""
+    github_repo_url: Optional[str] = None
+    github_branch: Optional[str] = None
+    github_token: Optional[str] = None
 
 
 __all__ = [

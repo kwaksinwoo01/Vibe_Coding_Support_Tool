@@ -25,40 +25,34 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
+# Setup UTF-8 encoding globally to prevent cp949 errors
+if sys.stdout:
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if sys.stderr:
+    try:
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 from models.core import AgentState, TierFState
 from models.builders import create_tier_f_state, create_pending_state
 from models.serializers import emit_agent_state
 from common.github_reporter import get_github_reporter
+from ..config import get_tier_keywords
 
 
 class UnknownLogicHandler:
     """Handler for unclassified or ambiguous requests"""
     
     # Enhanced keyword mapping for tier classification
-    TIER_KEYWORDS = {
-        "A": [
-            "create", "plan", "새로운", "작성", "wpd 생성", "work plan",
-            "make plan", "generate plan", "start plan"
-        ],
-        "B": [
-            "perform", "execute", "run", "실행", "진행", "작업 계획 실행",
-            "do task", "complete task", "implement"
-        ],
-        "C": [
-            "change", "modify", "edit", "수정", "변경", "마일스톤",
-            "update", "revise", "alter"
-        ],
-        "D": [
-            "error", "issue", "fails", "failure", "오류", "문제", "작동 안",
-            "bug", "broken", "not working", "debug"
-        ],
-        "E": [
-            "save", "mapping", "저장", "동기화", "데이터 클래스", "필드",
-            "document", "reflect", "update mapping"
-        ]
-    }
+    TIER_KEYWORDS = get_tier_keywords()
     
     def __init__(self, workspace_root: str = "."):
         self.workspace_root = Path(workspace_root)
@@ -211,7 +205,7 @@ class UnknownLogicHandler:
             user_input: Original user input that couldn't be classified
         """
         if not self.github_reporter.is_enabled():
-            self.log("  ℹ GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)")
+            self.log("GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)")
             return
         
         self.log("   Unclear logic detected. Auto-reporting issue to GitHub...")

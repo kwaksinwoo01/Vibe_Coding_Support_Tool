@@ -128,7 +128,7 @@ class ErrorSessionManager:
         
         # Mark error as resolved (strikethrough)
         error_pattern = rf'(- ){re.escape(error_description)}'
-        resolved_pattern = rf'\1~~{error_description}~~ ✅ RESOLVED'
+        resolved_pattern = rf'\1~~{error_description}~~ [RESOLVED]'
         content = re.sub(error_pattern, resolved_pattern, content)
         
         doc_path.write_text(content, encoding='utf-8')

@@ -1,0 +1,18 @@
+{
+  "name": "failure_to_issue_analysis",
+  "description": "Route failed executions to issue analysis tier",
+  "condition": {
+    "field": "status",
+    "operator": "==",
+    "value": "FAILED"
+  },
+  "action": {
+    "use_alternative": true,
+    "alternative_tier": "D",
+    "metadata": {
+      "reason": "Execution failed"
+    }
+  },
+  "priority": 85,
+  "enabled": true
+}

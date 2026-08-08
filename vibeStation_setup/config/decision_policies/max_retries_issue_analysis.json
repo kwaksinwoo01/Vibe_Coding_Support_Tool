@@ -1,0 +1,19 @@
+{
+  "name": "max_retries_issue_analysis",
+  "description": "Route to issue analysis tier after maximum retries reached",
+  "condition": {
+    "field": "retry_count",
+    "operator": ">=",
+    "value": 3
+  },
+  "action": {
+    "use_alternative": true,
+    "alternative_tier": "D",
+    "metadata": {
+      "reason": "Max retries reached",
+      "max_retries": 3
+    }
+  },
+  "priority": 95,
+  "enabled": true
+}

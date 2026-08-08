@@ -142,7 +142,7 @@ The merge operation returns a detailed result dictionary:
 
 Per ADMP policy, when enhancements or new features are implemented:
 
-### ❌ WRONG: Creating Separate Documents
+### WRONG: Creating Separate Documents
 ```
 docs/
 ├── IMPLEMENTATION_REPORT.md
@@ -150,7 +150,7 @@ docs/
 └── SECURITY_UPDATES.md           # ❌ Document fragmentation
 ```
 
-### ✅ CORRECT: Merge into Existing Report
+### CORRECT: Merge into Existing Report
 ```python
 merger.merge_documents(
     source_path=Path("ENHANCED_FEATURES.md"),

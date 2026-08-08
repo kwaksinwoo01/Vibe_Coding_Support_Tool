@@ -45,7 +45,7 @@ class DocumentMetadata:
     Part_N: str = ""  # e.g., "5", "5.2", "5.2.1"
     document_title: str = ""
     version: str = "1.0.0"  # N1.N2.N3 format
-    status: str = "📋 PENDING"  # 📋 PENDING, 🔄 IN PROGRESS, ✅ COMPLETE
+    status: str = "PENDING"  # PENDING, IN PROGRESS, COMPLETE
     timestamp: str = ""  # ISO 8601 format
     
     def to_dict(self) -> Dict[str, Any]:

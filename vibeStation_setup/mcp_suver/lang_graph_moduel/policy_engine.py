@@ -237,10 +237,10 @@ class PolicyEngine:
     
     def load_policies(self, config_path: str) -> int:
         """
-        Load policies from JSON configuration file.
+        Load policies from split JSON configuration directory.
         
         Args:
-            config_path: Path to JSON configuration file
+            config_path: Path to directory containing individual policy JSON files
         
         Returns:
             Number of policies loaded
@@ -248,17 +248,26 @@ class PolicyEngine:
         try:
             path = Path(config_path)
             if not path.exists():
-                print(f"Warning: Policy config file not found: {config_path}")
+                print(f"Warning: Policy config directory not found: {config_path}")
                 return 0
             
-            with open(path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
+            if not path.is_dir():
+                print(f"Warning: Policy config path is not a directory: {config_path}")
+                return 0
             
-            rules_data = config.get("rules", [])
+            # Load all JSON files except metadata.json
+            policy_files = [f for f in path.glob("*.json") if f.name != "metadata.json"]
             
-            for rule_data in rules_data:
-                rule = PolicyRule.from_dict(rule_data)
-                self.add_rule(rule)
+            for policy_file in policy_files:
+                try:
+                    with open(policy_file, 'r', encoding='utf-8') as f:
+                        rule_data = json.load(f)
+                    
+                    rule = PolicyRule.from_dict(rule_data)
+                    self.add_rule(rule)
+                except Exception as e:
+                    print(f"Error loading policy from {policy_file.name}: {e}")
+                    continue
             
             # Sort by priority (highest first)
             self.rules.sort(key=lambda r: r.priority, reverse=True)

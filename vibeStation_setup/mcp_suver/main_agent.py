@@ -9,11 +9,14 @@ and human-in-the-loop support.
 New Features (v2.1):
 - Confidence-based routing with DecisionEngine
 - Automatic retry with exponential backoff
-- Circuit breaker pattern with Redis persistence
+- Circuit breaker pattern (in-memory, SQLite persistence via DB layer)
 - Policy-based decision rules
 - Comprehensive metrics collection
 - Enhanced human-in-the-loop with retry mechanism
 - Decision trace recording
+
+Note: Redis support has been removed. All persistence now uses SQLite via DB layer.
+Circuit breaker state is in-memory only for this version.
 
 Workflow:
 1. User Input -> Classification (via Tier F or keyword matching)
@@ -32,6 +35,7 @@ Usage:
 """
 
 import json
+import sys
 import time
 import warnings
 from pathlib import Path
@@ -40,8 +44,22 @@ from datetime import datetime
 from queue import Queue
 from threading import Lock
 
-from models.core import AgentState, TaskContext
-from lang_graph_moduel.decision_engine import (
+# Setup UTF-8 encoding globally to prevent cp949 errors
+if sys.stdout:
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if sys.stderr:
+    try:
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
+from .models.core import AgentState, TaskContext
+from .lang_graph_moduel.decision_engine import (
     DecisionEngine,
     DecisionContext,
     RoutingDecision,
@@ -49,39 +67,33 @@ from lang_graph_moduel.decision_engine import (
     create_decision_context,
     ConfidenceLevel,
 )
-from lang_graph_moduel.policy_engine import PolicyEngine
-from lang_graph_moduel.metrics_collector import get_metrics_collector, MetricsCollector
+from .lang_graph_moduel.policy_engine import PolicyEngine
+from .lang_graph_moduel.metrics_collector import get_metrics_collector, MetricsCollector
 
-from models.core.reporting_models import (
+from .models.core.reporting_models import (
     IssueClassification,
     ResolutionStrategy,
     RoutingInfo,
 )
-from common.github_reporter import get_github_reporter
+from .common.github_reporter import get_github_reporter
 
 # Import routing engine (extracted from inner classes)
-from core.routing_engine import (
+from .core.routing_engine import (
     RoutingEngine,
     IRoutingStrategy,
     KeywordRoutingStrategy,
     MetricsBasedRoutingStrategy,
     RoutingValidator,
 )
-
-# Redis import with fallback
-try:
-    import redis
-
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
-    warnings.warn(
-        "Redis not available. Circuit breaker state will not persist across restarts."
-    )
+from ..config import get_tier_keywords
 
 
 class CircuitBreakerState:
-    """Circuit breaker state for a tier with Redis persistence"""
+    """Circuit breaker state for a tier (in-memory only, SQLite persistence handled by DB layer)
+    
+    Note: Redis support removed. Circuit breaker state is now in-memory only.
+    For persistent state across restarts, use the SQLite database layer in vibeStation_setup/DB/
+    """
 
     CLOSED = "CLOSED"  # Normal operation
     OPEN = "OPEN"  # Fast-fail mode
@@ -92,7 +104,6 @@ class CircuitBreakerState:
         tier: str,
         failure_threshold: int = 5,
         cooldown_seconds: int = 60,
-        redis_client: Optional[Any] = None,
     ):
         self.tier = tier
         self.state = self.CLOSED
@@ -101,51 +112,7 @@ class CircuitBreakerState:
         self.cooldown_seconds = cooldown_seconds
         self.last_failure_time: Optional[float] = None
         self.last_success_time: Optional[float] = None
-        self.redis_client = redis_client
         self._lock = Lock()
-
-        # Load from Redis if available
-        if self.redis_client:
-            self._load_from_redis()
-
-    def _redis_key(self) -> str:
-        """Generate Redis key for this circuit breaker"""
-        return f"circuit_breaker:{self.tier}"
-
-    def _load_from_redis(self):
-        """Load state from Redis"""
-        try:
-            key = self._redis_key()
-            data = self.redis_client.get(key)
-            if data:
-                state_dict = json.loads(data)
-                self.state = state_dict.get("state", self.CLOSED)
-                self.failure_count = state_dict.get("failure_count", 0)
-                self.last_failure_time = state_dict.get("last_failure_time")
-                self.last_success_time = state_dict.get("last_success_time")
-        except Exception as e:
-            print(f"[CIRCUIT_BREAKER] Failed to load state from Redis: {e}")
-
-    def _save_to_redis(self):
-        """Save state to Redis"""
-        if not self.redis_client:
-            return
-
-        try:
-            key = self._redis_key()
-            state_dict = {
-                "tier": self.tier,
-                "state": self.state,
-                "failure_count": self.failure_count,
-                "last_failure_time": self.last_failure_time,
-                "last_success_time": self.last_success_time,
-                "timestamp": datetime.now().isoformat(),
-            }
-            self.redis_client.set(key, json.dumps(state_dict))
-            # Set expiration to 24 hours to avoid stale data
-            self.redis_client.expire(key, 86400)
-        except Exception as e:
-            print(f"[CIRCUIT_BREAKER] Failed to save state to Redis: {e}")
 
     def record_success(self):
         """Record successful execution"""
@@ -157,8 +124,6 @@ class CircuitBreakerState:
                 # Success in half-open closes circuit
                 self.state = self.CLOSED
 
-            self._save_to_redis()
-
     def record_failure(self):
         """Record failed execution"""
         with self._lock:
@@ -167,8 +132,6 @@ class CircuitBreakerState:
 
             if self.failure_count >= self.failure_threshold:
                 self.state = self.OPEN
-
-            self._save_to_redis()
 
     def can_execute(self) -> bool:
         """Check if tier can execute (circuit not open)"""
@@ -185,7 +148,6 @@ class CircuitBreakerState:
                 if elapsed >= self.cooldown_seconds:
                     # Enter half-open state to test
                     self.state = self.HALF_OPEN
-                    self._save_to_redis()
                     return True
 
             return False
@@ -196,7 +158,6 @@ class CircuitBreakerState:
             self.state = self.CLOSED
             self.failure_count = 0
             self.last_failure_time = None
-            self._save_to_redis()
 
 
 class HumanDecisionQueue:
@@ -320,22 +281,19 @@ class MainAgent:
         enable_circuit_breaker: bool = True,
         enable_metrics: bool = True,
         policy_config_path: Optional[str] = None,
-        redis_host: str = "localhost",
-        redis_port: int = 6379,
-        redis_db: int = 0,
     ):
         """
         Initialize main agent.
 
+        Note: Redis support removed. All persistence now uses SQLite via DB layer.
+        Circuit breaker state is in-memory only.
+
         Args:
             workspace_root: Root directory of workspace
             enable_decision_engine: Enable intelligent routing decisions
-            enable_circuit_breaker: Enable circuit breaker pattern
+            enable_circuit_breaker: Enable circuit breaker pattern (in-memory)
             enable_metrics: Enable metrics collection
-            policy_config_path: Path to policy configuration JSON
-            redis_host: Redis server host
-            redis_port: Redis server port
-            redis_db: Redis database number
+            policy_config_path: Path to policy configuration directory (decision_policies/)
         """
         self.workspace_root = workspace_root
         self.execution_history: List[Dict[str, Any]] = []
@@ -343,26 +301,6 @@ class MainAgent:
         
         # Multi-tier routing: Store alternative tiers with valid confidence
         self._alternative_tiers: List[Tuple[str, float]] = []
-
-        # Redis client for circuit breaker persistence
-        self.redis_client = None
-        if REDIS_AVAILABLE and enable_circuit_breaker:
-            try:
-                self.redis_client = redis.Redis(
-                    host=redis_host,
-                    port=redis_port,
-                    db=redis_db,
-                    decode_responses=True,
-                    socket_timeout=2,
-                    socket_connect_timeout=2,
-                )
-                # Test connection
-                self.redis_client.ping()
-                print(f"[MAIN_AGENT] Redis connected: {redis_host}:{redis_port}")
-            except Exception as e:
-                print(f"[MAIN_AGENT] Redis connection failed: {e}")
-                print(f"[MAIN_AGENT] Falling back to in-memory circuit breaker")
-                self.redis_client = None
 
         # Decision engine
         self.enable_decision_engine = enable_decision_engine
@@ -373,22 +311,20 @@ class MainAgent:
         else:
             self.decision_engine = None
 
-        # Policy engine
+        # Policy engine - uses split decision_policies directory
         if policy_config_path is None:
-            # Use default config path
+            # Use default config path (directory-based)
             policy_config_path = str(
-                Path(__file__).parent / "config" / "decision_policies.json"
+                Path(__file__).parent.parent / "config" / "decision_policies"
             )
 
         self.policy_engine = PolicyEngine(policy_config_path)
 
-        # Circuit breakers (one per tier) with Redis persistence
+        # Circuit breakers (one per tier) - in-memory only
         self.enable_circuit_breaker = enable_circuit_breaker
         self.circuit_breakers: Dict[str, CircuitBreakerState] = {}
         for tier in self.TIER_MODULES.keys():
-            self.circuit_breakers[tier] = CircuitBreakerState(
-                tier, redis_client=self.redis_client if enable_circuit_breaker else None
-            )
+            self.circuit_breakers[tier] = CircuitBreakerState(tier)
 
         # Metrics
         self.enable_metrics = enable_metrics
@@ -416,12 +352,6 @@ class MainAgent:
     def shutdown(self):
         """Shutdown the agent and cleanup resources"""
         print("[MAIN_AGENT] Shutting down...")
-        if self.redis_client:
-            try:
-                self.redis_client.close()
-                print("[MAIN_AGENT] Redis connection closed")
-            except Exception as e:
-                print(f"[MAIN_AGENT] Error closing Redis: {e}")
         print("[MAIN_AGENT] Shutdown complete")
 
     # ========================================================================
@@ -451,77 +381,12 @@ class MainAgent:
         """
         Classify user input with INDEPENDENT confidence scoring for each tier.
         
-        **New Multi-Evaluation Approach**:
-        - Each tier evaluates independently with 0.0~1.0 confidence (NOT competitive distribution)
-        - Returns primary tier with highest confidence
-        - Stores ALL tiers with valid confidence (>= 0.4) for sequential routing
-        
-        Returns: (primary_tier, primary_confidence)
-        Side Effect: Sets self._alternative_tiers for sequential routing
+        **Enhanced Multi-Evaluation with Document Path/Metadata Keywords**
         """
         user_input_lower = user_input.lower()
         
-        # Enhanced keyword mapping with INDEPENDENT scoring (not competitive)
-        tier_keywords = {
-            "A": {
-                "keywords": [
-                    "create", "make", "new", "plan", "wpd", "work plan",
-                    "작업 계획", "생성", "작성", "문서 생성"
-                ],
-                "negative": ["edit", "modify", "change", "execute", "perform", "run", "save", "error", "debug"],
-                "max_score": 10.0,  # Independent max score
-            },
-            "B": {
-                "keywords": [
-                    "execute", "perform", "run", "implement", "do", "fulfill",
-                    "실행", "수행", "실행하기", "진행", "완료",
-                    "execute the plan", "perform plan", "run task"
-                ],
-                "negative": ["create", "plan", "edit", "error", "debug"],
-                "max_score": 10.0,
-            },
-            "C": {
-                "keywords": [
-                    "edit", "modify", "change", "update", "alter", "adjust",
-                    "수정", "변경", "편집", "업데이트", "조정",
-                    "edit plan", "modify task", "change task",
-                    # Document correction keywords (HIGH PRIORITY)
-                    "incorrectly created", "wrong document", "should merge",
-                    "잘못 생성", "문서 병합", "경로 수정", "incorrectly generated"
-                ],
-                "negative": ["create new", "execute", "run"],
-                "max_score": 12.0,  # Higher max for document correction
-            },
-            "D": {
-                "keywords": [
-                    "error", "bug", "issue", "problem", "debug", "fix",
-                    "not working", "broken", "failed", "failure",
-                    "오류", "버그", "문제", "해결", "디버그",
-                    "error handling", "debug issue",
-                    # Document ANALYSIS keywords (not correction)
-                    "analyze document", "check document", "validate",
-                    "문서 분석", "검증"
-                ],
-                "negative": ["create new", "execute"],
-                "max_score": 10.0,
-            },
-            "E": {
-                "keywords": [
-                    "save", "mapping", "relationship", "organize",
-                    "저장", "매핑", "관계", "정리",
-                    "save changes", "update mapping", "document management"
-                ],
-                "negative": ["create", "execute", "error"],
-                "max_score": 8.0,
-            },
-            "F": {
-                "keywords": [],  # Fallback - no specific keywords
-                "negative": [],
-                "max_score": 3.0,
-            },
-        }
+        tier_keywords = get_tier_keywords()
         
-        # INDEPENDENT EVALUATION: Each tier gets 0.0~1.0 independently
         independent_scores: Dict[str, float] = {}
         
         for tier, tier_config in tier_keywords.items():
@@ -530,72 +395,74 @@ class MainAgent:
             negative = tier_config["negative"]
             max_score = tier_config["max_score"]
             
-            # Positive keyword matching (1.0 per keyword)
+            # Positive keyword matching
             for keyword in keywords:
                 if keyword in user_input_lower:
                     raw_score += 1.0
             
-            # Negative keyword matching (penalize -0.5 per negative)
+            # Negative keyword matching
             for neg_keyword in negative:
                 if neg_keyword in user_input_lower:
                     raw_score -= 0.5
             
-            # Context-specific bonuses (phrase matching)
-            if tier == "B" and "execute" in user_input_lower and "plan" in user_input_lower:
-                raw_score += 2.0
-            elif tier == "C":
-                # HIGH PRIORITY: Document incorrectly created/wrong path/merge needed
-                if ("incorrectly" in user_input_lower or "잘못" in user_input_lower) and \
-                   ("document" in user_input_lower or "문서" in user_input_lower or "generated" in user_input_lower or "created" in user_input_lower):
-                    raw_score += 4.0  # STRONG signal for Tier C
-                if ("merge" in user_input_lower or "병합" in user_input_lower) and \
-                   ("document" in user_input_lower or "문서" in user_input_lower):
+            # **Tier E 특화: 경로/분류 문제 감지 (높은 보너스)**
+            if tier == "E":
+                # "classification ... location ... path" 패턴 감지
+                if ("classification" in user_input_lower or "분류" in user_input_lower) and \
+                   ("location" in user_input_lower or "path" in user_input_lower or "위치" in user_input_lower or "경로" in user_input_lower):
+                    raw_score += 5.0  # **STRONG signal**
+                
+                # "incorrect/wrong ... path/location/classification" 패턴
+                if ("incorrect" in user_input_lower or "wrong" in user_input_lower or "잘못" in user_input_lower) and \
+                   ("path" in user_input_lower or "location" in user_input_lower or "classification" in user_input_lower or \
+                    "경로" in user_input_lower or "위치" in user_input_lower or "분류" in user_input_lower):
+                    raw_score += 4.0
+                
+                # Migration guide 관련
+                if ("migration" in user_input_lower or "마이그레이션" in user_input_lower) and \
+                   ("guide" in user_input_lower or "path" in user_input_lower or "location" in user_input_lower):
                     raw_score += 3.0
-                if "wrong directory" in user_input_lower or "wrong path" in user_input_lower or "잘못된 경로" in user_input_lower:
-                    raw_score += 3.0
-                if "should be in" in user_input_lower or "should merge" in user_input_lower:
-                    raw_score += 2.5
-            elif tier == "D":
-                # Document analysis (NOT correction) - should score LOWER than C for correction tasks
-                if ("error" in user_input_lower or "debug" in user_input_lower):
-                    raw_score += 1.5
-                # If it's document ANALYSIS (not correction), give moderate score
-                if ("document" in user_input_lower or "문서" in user_input_lower) and \
-                   not ("incorrectly" in user_input_lower or "merge" in user_input_lower or "wrong" in user_input_lower):
-                    raw_score += 1.0
             
-            # Normalize to 0.0~1.0 using tier-specific max_score
+            # **Tier C와의 명확한 구분: WPD(작업 계획) vs 일반 문서**
+            elif tier == "C":
+                # Tier C는 "work plan", "wpd", "task" 등과 함께만 수정으로 인정
+                if ("work plan" in user_input_lower or "wpd" in user_input_lower or "task" in user_input_lower):
+                    # 이미 negative에서 경로/분류 키워드가 제거됨
+                    pass
+                else:
+                    # WPD가 아니면 Tier C 감소
+                    raw_score = max(0, raw_score - 1.0)
+            
+            # Normalize
             normalized_score = min(1.0, max(0.0, raw_score / max_score))
             independent_scores[tier] = normalized_score
         
-        # Find primary tier (highest confidence)
+        # Find primary tier
         primary_tier = max(independent_scores.keys(), key=lambda k: independent_scores[k])
         primary_confidence = independent_scores[primary_tier]
         
-        # Find ALL alternative tiers with valid confidence (>= 0.4)
+        # Find alternatives
         VALID_THRESHOLD = 0.4
         valid_tiers = [
             (tier, conf) for tier, conf in independent_scores.items()
             if conf >= VALID_THRESHOLD and tier != primary_tier
         ]
-        
-        # Sort alternatives by confidence (descending)
         valid_tiers.sort(key=lambda x: x[1], reverse=True)
         
-        # Store alternatives for sequential routing
         self._alternative_tiers = valid_tiers
         
-        # Fallback to Tier F if primary confidence too low
+        # Fallback to F if too low
         if primary_confidence < 0.3:
             primary_tier = "F"
             primary_confidence = independent_scores.get("F", 0.3)
-            self._alternative_tiers = []  # Clear alternatives
+            self._alternative_tiers = []
         
-        print(f"[CLASSIFY] Input: '{user_input}' -> Tier {primary_tier} (confidence: {primary_confidence:.2f})")
+        print(f"[CLASSIFY] Input: '{user_input[:80]}...'")
+        print(f"[CLASSIFY] -> Tier {primary_tier} (confidence: {primary_confidence:.2f})")
         print(f"[CLASSIFY] Independent Scores: {independent_scores}")
         if self._alternative_tiers:
             alt_str = ", ".join([f"{t}({c:.2f})" for t, c in self._alternative_tiers])
-            print(f"[CLASSIFY] Alternative Tiers (>={VALID_THRESHOLD}): {alt_str}")
+            print(f"[CLASSIFY] Alternative Tiers: {alt_str}")
         
         return primary_tier, primary_confidence
 
@@ -681,7 +548,7 @@ class MainAgent:
                 auto_resolve_details = context.payload.get("auto_resolve_details")
                 if auto_resolve_details:
                     print(
-                        f"[MAIN_AGENT] 🤖 Auto-resolve detected: Forcing route to Tier C"
+                        f"[MAIN_AGENT] [AUTO-RESOLVE] Auto-resolve detected: Forcing route to Tier C"
                     )
                     print(
                         f"[MAIN_AGENT]   -> Action: {auto_resolve_details.get('action', 'N/A')}"
@@ -712,7 +579,7 @@ class MainAgent:
         if context.tier == "D" and context.status == "SUCCESS":
             auto_resolve_details = context.payload.get("auto_resolve_details")
             if auto_resolve_details:
-                print(f"[MAIN_AGENT] 🤖 Auto-resolve detected from Tier D analysis")
+                print(f"[MAIN_AGENT] [AUTO-RESOLVE] Auto-resolve detected from Tier D analysis")
                 print(
                     f"[MAIN_AGENT]   -> Action: {auto_resolve_details.get('action', 'N/A')}"
                 )
@@ -745,7 +612,7 @@ class MainAgent:
                         "auto_resolve_confidence", 0.95, labels={"tier": "D"}
                     )
 
-                print(f"[MAIN_AGENT] [OK] Forced routing: D → C (auto-resolve chain)")
+                print(f"[MAIN_AGENT] [OK] Forced routing: D -> C (auto-resolve chain)")
 
         # Apply policy rules
         policy_action = self.policy_engine.evaluate(
@@ -951,8 +818,14 @@ class MainAgent:
                 # Get main function for other tiers
                 main_func = getattr(module, "main")
                 import inspect
+                import os
 
                 sig = inspect.signature(main_func)
+                
+                # Read GitHub settings from environment
+                github_repo_url = os.environ.get("GITHUB_REPO_URL")
+                github_branch = os.environ.get("GITHUB_BRANCH")
+                github_token = os.environ.get("GITHUB_TOKEN")
 
                 # Execute tier module
                 if "previous_payload" in sig.parameters and previous_state:
@@ -964,13 +837,35 @@ class MainAgent:
                         "confidence": previous_state.confidence,
                         "retry_count": previous_state.retry_count,
                     }
-                    state = main_func(
-                        user_input,
-                        workspace_root=self.workspace_root,
-                        previous_payload=prev_payload,
-                    )
+                    
+                    # Check if tier supports GitHub parameters
+                    if "github_repo_url" in sig.parameters:
+                        state = main_func(
+                            user_input,
+                            workspace_root=self.workspace_root,
+                            previous_payload=prev_payload,
+                            github_repo_url=github_repo_url,
+                            github_branch=github_branch,
+                            github_token=github_token,
+                        )
+                    else:
+                        state = main_func(
+                            user_input,
+                            workspace_root=self.workspace_root,
+                            previous_payload=prev_payload,
+                        )
                 else:
-                    state = main_func(user_input, workspace_root=self.workspace_root)
+                    # Check if tier supports GitHub parameters
+                    if "github_repo_url" in sig.parameters:
+                        state = main_func(
+                            user_input, 
+                            workspace_root=self.workspace_root,
+                            github_repo_url=github_repo_url,
+                            github_branch=github_branch,
+                            github_token=github_token,
+                        )
+                    else:
+                        state = main_func(user_input, workspace_root=self.workspace_root)
 
             # Store previous state info
             if previous_state and "previous_state_info" not in state.payload:
@@ -1489,28 +1384,20 @@ def main():
 
     if len(sys.argv) < 2:
         print(
-            "Usage: python main_agent.py '<user_input>' [workspace_root] [redis_host] [redis_port]"
+            "Usage: python main_agent.py '<user_input>' [workspace_root]"
         )
-        print("Example: python main_agent.py 'Create a work plan' . localhost 6379")
+        print("Example: python main_agent.py 'Create a work plan' .")
         sys.exit(1)
 
     user_input = sys.argv[1]
     workspace_root = sys.argv[2] if len(sys.argv) > 2 else "."
-    redis_host = (
-        sys.argv[3] if len(sys.argv) > 3 else os.getenv("REDIS_HOST", "localhost")
-    )
-    redis_port = (
-        int(sys.argv[4]) if len(sys.argv) > 4 else int(os.getenv("REDIS_PORT", "6379"))
-    )
 
-    # Create agent with Redis configuration
+    # Create agent (Redis parameters removed)
     agent = MainAgent(
         workspace_root=workspace_root,
         enable_decision_engine=True,
         enable_circuit_breaker=True,
         enable_metrics=True,
-        redis_host=redis_host,
-        redis_port=redis_port,
     )
 
     # Execute

@@ -31,6 +31,20 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
+# Setup UTF-8 encoding globally to prevent cp949 errors
+if sys.stdout:
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if sys.stderr:
+    try:
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 # 하위 모듈 import
@@ -48,6 +62,10 @@ from models.core.reporting_models import (
 
 from models.core import AgentState, TierDState
 from common.github_reporter import get_github_reporter
+
+# Import centralized tier keywords
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config.tier_keywords import get_tier_keywords_list
 
 
 class IssueAnalysisEngine:
@@ -100,7 +118,7 @@ class IssueAnalysisEngine:
             Formatted feedback summary string (also cached in self.feedback_context)
         """
         if not self.github_reporter.is_enabled():
-            self.log("  ℹ Feedback loading disabled (GitHub reporter not enabled)")
+            self.log("Feedback loading disabled (GitHub reporter not enabled)")
             return "No feedback context available (GitHub reporter disabled)."
         
         self.log(f"Loading feedback context from closed issues (max: {max_issues})...")
@@ -289,7 +307,7 @@ class IssueAnalysisEngine:
                 self.log(f"  → Auto-resolve action: {auto_resolve_details['action']}")
                 self.log(f"  → Target file: {auto_resolve_details['target_file'] or 'N/A'}")
             else:
-                self.log(f"  ℹ Not auto-resolvable: manual intervention may be required")
+                self.log(f"Not auto-resolvable: manual intervention may be required")
                 auto_resolve_details = None
             
             agent_state = AgentState(
@@ -356,7 +374,7 @@ class IssueAnalysisEngine:
             user_input: Original user input that triggered the analysis
         """
         if not self.github_reporter.is_enabled():
-            self.log("  ℹ GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)")
+            self.log("GitHub auto-reporting disabled (no GITHUB_TOKEN or PyGithub)")
             return
         
         routing_info = tier_d_state.get("routing_info")
@@ -658,13 +676,26 @@ def main(user_input: str, workspace_root: str = ".", error_context: Optional[Dic
     """
     engine = IssueAnalysisEngine(workspace_root)
     
-    # 문서 분석 트리거 감지
-    doc_keywords = [
-        "document", "문서", "incorrectly created", "잘못된 문서",
-        "merge", "병합", "duplicate", "중복", "wrong directory", "잘못된 경로"
-    ]
+    # Use centralized tier keywords for document-related detection
+    # Combine keywords from Tier C (edit/modify) and Tier E (document management)
+    tier_c_keywords = get_tier_keywords_list("C")
+    tier_e_keywords = get_tier_keywords_list("E")
     
-    is_document_issue = any(kw in user_input.lower() for kw in doc_keywords)
+    # Create combined document keywords list from relevant tier keywords
+    doc_keywords = []
+    doc_related_terms = ["document", "문서", "incorrectly", "created", "잘못", "생성",
+                        "merge", "병합", "duplicate", "중복", "wrong", "directory", "경로"]
+    
+    # Filter relevant keywords from Tier C and E
+    for kw in tier_c_keywords + tier_e_keywords:
+        if any(term in kw.lower() for term in ["document", "문서", "file", "파일", "merge", "병합", 
+                                                 "duplicate", "중복", "directory", "folder", "경로"]):
+            doc_keywords.append(kw)
+    
+    # Add specific phrases that indicate document issues
+    doc_keywords.extend(["incorrectly created", "잘못된 문서", "wrong directory", "잘못된 경로"])
+    
+    is_document_issue = any(kw.lower() in user_input.lower() for kw in doc_keywords)
     
     # 문서 경로 감지 (.md 파일)
     import re

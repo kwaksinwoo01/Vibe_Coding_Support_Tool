@@ -1,0 +1,18 @@
+{
+  "name": "partial_success_enhancement",
+  "description": "Route partial successes to document management for completion",
+  "condition": {
+    "field": "status",
+    "operator": "==",
+    "value": "PARTIAL"
+  },
+  "action": {
+    "use_alternative": true,
+    "alternative_tier": "E",
+    "metadata": {
+      "reason": "Partial success - complete in document management"
+    }
+  },
+  "priority": 75,
+  "enabled": true
+}
